@@ -1,0 +1,416 @@
+//@version=6
+// ═══════════════════════════════════════════════════════════════════════════
+//  GxT Multi-TF SMT + SSMT Scanner  |  4-Asset  |  Pine Script v6
+//  VISUAL RESTYLE: SMT marking/colours/labels now follow BUBBLY (GXV).
+//  Detection logic, timeframes, pair logic and alerts are UNCHANGED.
+// ═══════════════════════════════════════════════════════════════════════════
+indicator("GxT Multi-TF SMT + SSMT Scanner [4 Assets]", shorttitle = "GxT MTF-SMT", overlay = true, max_lines_count = 500, max_labels_count = 500)
+ 
+// ─── INPUTS ────────────────────────────────────────────────────────────────
+grp_assets = "1 · Assets (Asset 1-4)"
+grp_tf     = "2 · SMT Render Settings (Timeframe + Colour)"
+grp_logic  = "3 · SMT / SSMT Logic"
+grp_vis    = "SMT ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+grp_style  = "SMT Styling Settings"
+ 
+use_a = input.bool(true, "Asset 1", inline = "ast_a", group = grp_assets)
+sym_a = input.symbol("", "", inline = "ast_a", group = grp_assets)
+inv_a = input.bool(false, "Inverse", inline = "ast_a", group = grp_assets, tooltip = "Tick 'Inverse' for an asset that moves OPPOSITE to the others (e.g. DXY vs Gold). SMT then fires when it moves in the SAME direction.")
+ 
+use_b = input.bool(true, "Asset 2", inline = "ast_b", group = grp_assets)
+sym_b = input.symbol("", "", inline = "ast_b", group = grp_assets)
+inv_b = input.bool(false, "Inverse", inline = "ast_b", group = grp_assets)
+ 
+use_c = input.bool(true, "Asset 3", inline = "ast_c", group = grp_assets)
+sym_c = input.symbol("", "", inline = "ast_c", group = grp_assets)
+inv_c = input.bool(false, "Inverse", inline = "ast_c", group = grp_assets)
+ 
+use_d = input.bool(true, "Asset 4", inline = "ast_d", group = grp_assets)
+sym_d = input.symbol("", "", inline = "ast_d", group = grp_assets)
+inv_d = input.bool(false, "Inverse", inline = "ast_d", group = grp_assets)
+ 
+tf_15m = input.bool(true, "15m", inline = "r1", group = grp_tf, tooltip = "Timeframes below your chart timeframe are skipped automatically. Intraday charts also need the timeframe to be an exact multiple of the chart timeframe (e.g. 90m works on 15m / 30m, not on 1H). 15m / 30m / 1H show Swing SMT only; SSMT starts at 90m.")
+c_15m  = input.color(#dbdbdb, "", inline = "r1", group = grp_tf)
+tf_30m = input.bool(true, "30m", inline = "r1", group = grp_tf)
+c_30m  = input.color(#dbdbdb, "", inline = "r1", group = grp_tf)
+tf_1h  = input.bool(true, "1H",  inline = "r1", group = grp_tf)
+c_1h   = input.color(#dbdbdb, "", inline = "r1", group = grp_tf)
+tf_90m = input.bool(true, "90m", inline = "r2", group = grp_tf)
+c_90m  = input.color(#dbdbdb, "", inline = "r2", group = grp_tf)
+tf_4h  = input.bool(true, "4H",  inline = "r2", group = grp_tf)
+c_4h   = input.color(#dbdbdb, "", inline = "r2", group = grp_tf)
+tf_6h  = input.bool(true, "6H",  inline = "r2", group = grp_tf)
+c_6h   = input.color(#dbdbdb, "", inline = "r2", group = grp_tf)
+tf_7h  = input.bool(true, "7H",  inline = "r3", group = grp_tf)
+c_7h   = input.color(#dbdbdb, "", inline = "r3", group = grp_tf)
+tf_1d  = input.bool(true, "1D",  inline = "r3", group = grp_tf)
+c_1d   = input.color(#b8b8b8, "", inline = "r3", group = grp_tf)
+tf_1w  = input.bool(true, "1W",  inline = "r4", group = grp_tf)
+c_1w   = input.color(#b8b8b8, "", inline = "r4", group = grp_tf)
+tf_1m  = input.bool(true, "1M",  inline = "r4", group = grp_tf)
+c_1m   = input.color(#9c9c9c, "", inline = "r4", group = grp_tf)
+ 
+show_swing = input.bool(true, "Swing SMT (solid line)", group = grp_logic, tooltip = "Divergence at confirmed HTF swing highs / lows. Works on every timeframe.")
+show_ssmt  = input.bool(true, "SSMT (dashed line)", group = grp_logic, tooltip = "Divergence between two adjacent completed HTF candles. Only on timeframes of 90m and above.")
+pair_mode  = input.string("All 6 pairs", "Pairs compared", options = ["All 6 pairs", "Asset 1 vs others (3 pairs)"], group = grp_logic, tooltip = "All 6 pairs: 1/2, 1/3, 1/4, 2/3, 2/4, 3/4.\nAsset 1 vs others: only pairs that include Asset 1.\nLines are drawn on the CHART symbol's own extremes (price scale of the chart you are on).")
+min_pairs  = input.int(1, "Min diverging pairs", minval = 1, maxval = 6, group = grp_logic, tooltip = "Signal only if at least this many pairs diverge. 2+ is a stronger, cleaner filter.")
+tol_ticks  = input.int(2, "Equal-extreme tolerance (ticks)", minval = 0, group = grp_logic, tooltip = "An extreme within this many ticks of the previous one counts as EQUAL and gives no signal. 0 = exact match only.")
+both_dir   = input.bool(false, "Allow bull + bear on the same candle", group = grp_logic, tooltip = "OFF: if both directions fire on the same candle, the side with more diverging pairs wins. A tie draws nothing.")
+ 
+// ── Visuals (BUBBLY style) ──
+const string TIP_DYNAMIC_SMT_LABELS = "When enabled, hides SMT labels when the chart timeframe is at or above that timeframe's calculation gate (15m/30m→5m, 90m/1H→15m, 4H/6H/7H→1H, 1D→4H, 1W/1M→6H)."
+show_lines  = input.bool(true, "Show lines", group = grp_vis)
+smt_txt_all = input.color(#4a4a4a, "SMT Text", group = grp_vis)
+lbl_size_in = input.string(size.tiny, "SMT Labels Size", options = [size.tiny, size.small, size.normal, size.large, size.huge], group = grp_vis)
+show_labels = input.bool(true, "SMT Labels?", group = grp_vis)
+lbl_pairs   = input.bool(true, "Pair names in label?", group = grp_vis, tooltip = "ON: label shows TF + the pair(s) that diverged. OFF: timeframe only (pairs stay in the tooltip).")
+smt_cleanup = input.bool(true, "SMT Cleanup", group = grp_vis, tooltip = "Same direction + shared pivot A or pivot B: only the highest timeframe stays (BUBBLY cleanup). Equal timeframes are kept.")
+dyn_labels  = input.bool(false, "Dynamic SMT Labels?", group = grp_vis, tooltip = TIP_DYNAMIC_SMT_LABELS)
+max_marks   = input.int(150, "Max marks kept", minval = 10, maxval = 450, group = grp_vis, tooltip = "Oldest line + label are deleted past this cap. TradingView hard limit is 500 per type.")
+ 
+line_style_in = input.string("___", "SMT Line Style", options = ["___", "----", "...."], group = grp_style)
+ 
+// ─── CONSTANTS ─────────────────────────────────────────────────────────────
+string lbl_sz = lbl_size_in
+string smt_line_style = line_style_in == "----" ? line.style_dashed : line_style_in == "...." ? line.style_dotted : line.style_solid
+int chart_sec = timeframe.in_seconds(timeframe.period)
+ 
+// Index order = tfs order: 15, 30, 90, 60, 240, 360, 420, 1D, 1W, 1M
+f_tf_col(int k) =>
+    k == 0 ? c_15m : k == 1 ? c_30m : k == 2 ? c_90m : k == 3 ? c_1h : k == 4 ? c_4h : k == 5 ? c_6h : k == 6 ? c_7h : k == 7 ? c_1d : k == 8 ? c_1w : c_1m
+ 
+// BUBBLY gates (display only)
+f_tf_gate(int k) =>
+    k == 0 or k == 1 ? 300 : k == 2 or k == 3 ? 900 : k >= 4 and k <= 6 ? 3600 : k == 7 ? 14400 : 21600
+ 
+// Pair index tables (asset 0 = A / chart, 1 = B, 2 = C, 3 = D)
+var array<int> pair_i = array.from(0, 0, 0, 1, 1, 2)
+var array<int> pair_j = array.from(1, 2, 3, 2, 3, 3)
+int n_pairs = pair_mode == "All 6 pairs" ? 6 : 3
+ 
+// A blank symbol box = asset OFF (never falls back to the chart symbol)
+var array<bool> act_flags = array.from(use_a and str.length(sym_a) > 0, use_b and str.length(sym_b) > 0, use_c and str.length(sym_c) > 0, use_d and str.length(sym_d) > 0)
+var array<bool> inv_flags = array.from(inv_a, inv_b, inv_c, inv_d)
+var array<string> syms    = array.from(sym_a, sym_b, sym_c, sym_d)
+ 
+// Drawing registers (garbage collected, §2.8)
+ 
+// ─── HELPERS ───────────────────────────────────────────────────────────────
+f_short(string s) =>
+    array<string> parts = str.split(s, ":")
+    array.get(parts, array.size(parts) - 1)
+ 
+var array<string> names = array.from(f_short(sym_a), f_short(sym_b), f_short(sym_c), f_short(sym_d))
+ 
+f_div(float ci, float pvi, float ti, float cj, float pvj, float tj, bool is_inv) =>
+    int di = ci > pvi + ti ? 1 : ci < pvi - ti ? -1 : 0
+    int dj = cj > pvj + tj ? 1 : cj < pvj - tj ? -1 : 0
+    is_inv ? (di * dj == 1) : (di * dj == -1)
+ 
+f_count(array<float> now, array<float> before, array<float> mt) =>
+    int n = 0
+    string txt = ""
+    for p = 0 to n_pairs - 1
+        int ai = array.get(pair_i, p)
+        int aj = array.get(pair_j, p)
+        if array.get(act_flags, ai) and array.get(act_flags, aj)
+            bool pinv = array.get(inv_flags, ai) != array.get(inv_flags, aj)
+            float ti = array.get(mt, ai) * tol_ticks
+            float tj = array.get(mt, aj) * tol_ticks
+            if f_div(array.get(now, ai), array.get(before, ai), ti, array.get(now, aj), array.get(before, aj), tj, pinv)
+                n += 1
+                string pn = array.get(names, ai) + "/" + array.get(names, aj)
+                txt += (txt == "" ? "" : ", ") + pn
+    [n, txt]
+ 
+f_excl(int bear_n, int bull_n) =>
+    bool bear_ok = bear_n >= min_pairs
+    bool bull_ok = bull_n >= min_pairs
+    if bear_ok and bull_ok and not both_dir
+        if bear_n > bull_n
+            bull_ok := false
+        else if bull_n > bear_n
+            bear_ok := false
+        else
+            bear_ok := false
+            bull_ok := false
+    [bear_ok, bull_ok]
+ 
+f_valid(string tf) =>
+    int tf_sec = timeframe.in_seconds(tf)
+    int ch_sec = timeframe.in_seconds(timeframe.period)
+    timeframe.isintraday ? (tf_sec >= ch_sec and tf_sec % ch_sec == 0) : (tf_sec >= ch_sec)
+ 
+// ─── PER-TIMEFRAME STATE ───────────────────────────────────────────────────
+type TFState
+    string tf
+    string nm
+    bool   want
+    bool   valid
+    bool   ssmt_ok
+    int    last_t
+    int    cnt = 0
+    int    run_hT
+    int    run_lT
+    int    cur_hT
+    int    cur_lT
+    int    prv_hT
+    int    prv_lT
+    float  p2h0
+    float  p2l0
+    int    sh_t
+    int    sl_t
+    array<float> rh
+    array<float> rl
+    array<float> ch
+    array<float> cl
+    array<float> ph
+    array<float> pl
+    array<float> shs
+    array<float> shl
+ 
+f_make(string tf, string nm, bool want) =>
+    TFState.new(tf = tf, nm = nm, want = want, valid = f_valid(tf), ssmt_ok = timeframe.in_seconds(tf) >= 5400, rh = array.new<float>(5, na), rl = array.new<float>(5, na), ch = array.new<float>(5, na), cl = array.new<float>(5, na), ph = array.new<float>(5, na), pl = array.new<float>(5, na), shs = array.new<float>(5, na), shl = array.new<float>(5, na))
+ 
+f_reset_run(TFState st, array<float> bh, array<float> bl) =>
+    for i = 0 to 4
+        array.set(st.rh, i, array.get(bh, i))
+        array.set(st.rl, i, array.get(bl, i))
+    st.run_hT := time
+    st.run_lT := time
+    true
+ 
+f_update_run(TFState st, array<float> bh, array<float> bl) =>
+    for i = 0 to 4
+        float h = array.get(bh, i)
+        float l = array.get(bl, i)
+        if not na(h)
+            float rhv = array.get(st.rh, i)
+            if na(rhv) or h > rhv
+                array.set(st.rh, i, h)
+                if i == 4
+                    st.run_hT := time
+        if not na(l)
+            float rlv = array.get(st.rl, i)
+            if na(rlv) or l < rlv
+                array.set(st.rl, i, l)
+                if i == 4
+                    st.run_lT := time
+    true
+ 
+// One record per drawn signal so duplicates can be arbitrated (BUBBLY "hard winner" rule):
+// same direction + same pivot A time + same pivot B time = same SMT. Highest timeframe rank wins.
+type Mark
+    line  ln
+    label lb
+    int   x1
+    int   x2
+    int   dir
+    int   rank
+ 
+var array<Mark> marks = array.new<Mark>()
+ 
+// BUBBLY rank order: 15m < 30m < 1H < 90m < 4H < 6H < 7H < 1D < 1W < 1M  (k order: 15,30,90,1H,4H,6H,7H,1D,1W,1M)
+f_rank(int k) =>
+    k == 0 ? 1 : k == 1 ? 2 : k == 2 ? 4 : k == 3 ? 3 : k == 4 ? 5 : k == 5 ? 6 : k == 6 ? 7 : k == 7 ? 9 : k == 8 ? 10 : 11
+ 
+f_draw(TFState st, int k, bool is_bear, bool is_ssmt, int n_div, string pairs_txt, int x1, float y1, int x2, float y2, float atr_v) =>
+    bool ok = not na(x1) and not na(x2) and not na(y1) and not na(y2)
+    int  rk  = f_rank(k)
+    int  dir = is_bear ? -1 : 1
+    bool dominated = false
+    if ok and array.size(marks) > 0
+        for i = array.size(marks) - 1 to 0
+            Mark m = array.get(marks, i)
+            bool exact  = m.x1 == x1 and m.x2 == x2
+            bool shared = exact or (smt_cleanup and (m.x1 == x1 or m.x2 == x2))
+            if m.dir == dir and shared
+                if m.rank > rk or (m.rank == rk and exact)
+                    dominated := true
+                else if m.rank < rk
+                    if not na(m.ln)
+                        line.delete(m.ln)
+                    if not na(m.lb)
+                        label.delete(m.lb)
+                    array.remove(marks, i)
+    if ok and not dominated
+        color col = f_tf_col(k)
+        line  ln = na
+        label lb = na
+        if show_lines
+            ln := line.new(x1, y1, x2, y2, xloc = xloc.bar_time, color = col, style = smt_line_style, width = 1)
+        bool hide_dyn = dyn_labels and chart_sec >= f_tf_gate(k)
+        if show_labels and not hide_dyn
+            int    xm  = int((x1 + x2) / 2)
+            float  ly  = (y1 + y2) / 2
+            string typ = is_ssmt ? "SSMT" : "SMT"
+            string txt = lbl_pairs ? st.nm + "\n" + pairs_txt : st.nm
+            string tip = st.nm + " " + typ + " " + (is_bear ? "Bear" : "Bull") + "\nDiverging pairs (" + str.tostring(n_div) + "): " + pairs_txt + "\nFrom: " + str.tostring(y1) + "\nTo: " + str.tostring(y2)
+            lb := label.new(xm, ly, txt, xloc = xloc.bar_time, yloc = yloc.price, style = is_bear ? label.style_label_down : label.style_label_up, color = color.new(color.white, 100), textcolor = smt_txt_all, size = lbl_sz, textalign = text.align_center, tooltip = tip)
+        array.push(marks, Mark.new(ln, lb, x1, x2, dir, rk))
+        if array.size(marks) > max_marks
+            Mark old = array.shift(marks)
+            if not na(old.ln)
+                line.delete(old.ln)
+            if not na(old.lb)
+                label.delete(old.lb)
+    true
+ 
+// Main engine for one timeframe (logic unchanged).
+f_process(TFState st, int k, array<float> bh, array<float> bl, array<float> mt, float atr_v) =>
+    bool bull_smt  = false
+    bool bear_smt  = false
+    bool bull_ssmt = false
+    bool bear_ssmt = false
+    if st.want and st.valid
+        int t = time(st.tf)
+        if barstate.isconfirmed and not na(t)
+            if na(st.last_t)
+                st.last_t := t
+                f_reset_run(st, bh, bl)
+            else if t != st.last_t
+                st.p2h0 := array.get(st.ph, 4)
+                st.p2l0 := array.get(st.pl, 4)
+                for i = 0 to 4
+                    array.set(st.ph, i, array.get(st.ch, i))
+                    array.set(st.pl, i, array.get(st.cl, i))
+                    array.set(st.ch, i, array.get(st.rh, i))
+                    array.set(st.cl, i, array.get(st.rl, i))
+                st.prv_hT := st.cur_hT
+                st.prv_lT := st.cur_lT
+                st.cur_hT := st.run_hT
+                st.cur_lT := st.run_lT
+                st.cnt := st.cnt + 1
+                st.last_t := t
+                f_reset_run(st, bh, bl)
+ 
+                if show_ssmt and st.ssmt_ok and st.cnt >= 3
+                    [s_bear_n, s_bear_txt] = f_count(st.ch, st.ph, mt)
+                    [s_bull_n, s_bull_txt] = f_count(st.cl, st.pl, mt)
+                    [s_bear_ok, s_bull_ok] = f_excl(s_bear_n, s_bull_n)
+                    if s_bear_ok
+                        bear_ssmt := true
+                        f_draw(st, k, true, true, s_bear_n, s_bear_txt, st.prv_hT, array.get(st.ph, 4), st.cur_hT, array.get(st.ch, 4), atr_v)
+                    if s_bull_ok
+                        bull_ssmt := true
+                        f_draw(st, k, false, true, s_bull_n, s_bull_txt, st.prv_lT, array.get(st.pl, 4), st.cur_lT, array.get(st.cl, 4), atr_v)
+ 
+                if show_swing and st.cnt >= 4
+                    bool sw_hi = array.get(st.ph, 4) > st.p2h0 and array.get(st.ph, 4) > array.get(st.ch, 4)
+                    bool sw_lo = array.get(st.pl, 4) < st.p2l0 and array.get(st.pl, 4) < array.get(st.cl, 4)
+                    int    w_bear_n = 0
+                    int    w_bull_n = 0
+                    string w_bear_txt = ""
+                    string w_bull_txt = ""
+                    if sw_hi and not na(st.sh_t)
+                        [nb, tb] = f_count(st.ph, st.shs, mt)
+                        w_bear_n := nb
+                        w_bear_txt := tb
+                    if sw_lo and not na(st.sl_t)
+                        [nl, tl] = f_count(st.pl, st.shl, mt)
+                        w_bull_n := nl
+                        w_bull_txt := tl
+                    [w_bear_ok, w_bull_ok] = f_excl(w_bear_n, w_bull_n)
+                    if w_bear_ok
+                        bear_smt := true
+                        f_draw(st, k, true, false, w_bear_n, w_bear_txt, st.sh_t, array.get(st.shs, 4), st.prv_hT, array.get(st.ph, 4), atr_v)
+                    if w_bull_ok
+                        bull_smt := true
+                        f_draw(st, k, false, false, w_bull_n, w_bull_txt, st.sl_t, array.get(st.shl, 4), st.prv_lT, array.get(st.pl, 4), atr_v)
+                    if sw_hi
+                        for i = 0 to 4
+                            array.set(st.shs, i, array.get(st.ph, i))
+                        st.sh_t := st.prv_hT
+                    if sw_lo
+                        for i = 0 to 4
+                            array.set(st.shl, i, array.get(st.pl, i))
+                        st.sl_t := st.prv_lT
+            else
+                f_update_run(st, bh, bl)
+    [bull_smt, bear_smt, bull_ssmt, bear_ssmt]
+ 
+// ─── SECURITY CALLS ────────────────────────────────────────────────────────
+array<float> bh = array.new<float>(5, na)
+array<float> bl = array.new<float>(5, na)
+array<float> mt = array.new<float>(5, syminfo.mintick)
+// index 4 = CHART symbol (used only for pivots / drawing on the chart's price scale)
+array.set(bh, 4, high)
+array.set(bl, 4, low)
+for ix = 0 to 3
+    if array.get(act_flags, ix)
+        [h_x, l_x, m_x] = request.security(array.get(syms, ix), timeframe.period, [high, low, syminfo.mintick], barmerge.gaps_off, barmerge.lookahead_off)
+        array.set(bh, ix, h_x)
+        array.set(bl, ix, l_x)
+        array.set(mt, ix, m_x)
+ 
+// ─── STATE SETUP (once) ────────────────────────────────────────────────────
+var array<TFState> tfs = array.new<TFState>()
+if barstate.isfirst
+    array.push(tfs, f_make("15",   "15m", tf_15m))
+    array.push(tfs, f_make("30",   "30m", tf_30m))
+    array.push(tfs, f_make("90",   "90m", tf_90m))
+    array.push(tfs, f_make("60",   "1H",  tf_1h))
+    array.push(tfs, f_make("240",  "4H",  tf_4h))
+    array.push(tfs, f_make("360",  "6H",  tf_6h))
+    array.push(tfs, f_make("420",  "7H",  tf_7h))
+    array.push(tfs, f_make("1D",   "1D",  tf_1d))
+    array.push(tfs, f_make("1W",   "1W",  tf_1w))
+    array.push(tfs, f_make("1M",   "1M",  tf_1m))
+ 
+// ─── ENGINE ────────────────────────────────────────────────────────────────
+float atr_v = ta.atr(14)
+array<bool> bull_smt_sig  = array.new<bool>(10, false)
+array<bool> bear_smt_sig  = array.new<bool>(10, false)
+array<bool> bull_ssmt_sig = array.new<bool>(10, false)
+array<bool> bear_ssmt_sig = array.new<bool>(10, false)
+ 
+for k = 0 to array.size(tfs) - 1
+    TFState st = array.get(tfs, k)
+    [b1, r1, b2, r2] = f_process(st, k, bh, bl, mt, atr_v)
+    array.set(bull_smt_sig, k, b1)
+    array.set(bear_smt_sig, k, r1)
+    array.set(bull_ssmt_sig, k, b2)
+    array.set(bear_ssmt_sig, k, r2)
+ 
+// ─── ALERTS (unchanged) ────────────────────────────────────────────────────
+alertcondition(array.includes(bull_smt_sig, true),  title = "Any Bullish SMT",  message = "Bullish SMT on {{ticker}} ({{interval}})")
+alertcondition(array.includes(bear_smt_sig, true),  title = "Any Bearish SMT",  message = "Bearish SMT on {{ticker}} ({{interval}})")
+alertcondition(array.includes(bull_ssmt_sig, true), title = "Any Bullish SSMT", message = "Bullish SSMT on {{ticker}} ({{interval}})")
+alertcondition(array.includes(bear_ssmt_sig, true), title = "Any Bearish SSMT", message = "Bearish SSMT on {{ticker}} ({{interval}})")
+ 
+alertcondition(array.get(bull_smt_sig, 0), title = "15m Bullish SMT", message = "15m Bullish SMT on {{ticker}}")
+alertcondition(array.get(bear_smt_sig, 0), title = "15m Bearish SMT", message = "15m Bearish SMT on {{ticker}}")
+alertcondition(array.get(bull_smt_sig, 1), title = "30m Bullish SMT", message = "30m Bullish SMT on {{ticker}}")
+alertcondition(array.get(bear_smt_sig, 1), title = "30m Bearish SMT", message = "30m Bearish SMT on {{ticker}}")
+alertcondition(array.get(bull_smt_sig, 2), title = "90m Bullish SMT", message = "90m Bullish SMT on {{ticker}}")
+alertcondition(array.get(bear_smt_sig, 2), title = "90m Bearish SMT", message = "90m Bearish SMT on {{ticker}}")
+alertcondition(array.get(bull_smt_sig, 3), title = "1H Bullish SMT", message = "1H Bullish SMT on {{ticker}}")
+alertcondition(array.get(bear_smt_sig, 3), title = "1H Bearish SMT", message = "1H Bearish SMT on {{ticker}}")
+alertcondition(array.get(bull_smt_sig, 4), title = "4H Bullish SMT", message = "4H Bullish SMT on {{ticker}}")
+alertcondition(array.get(bear_smt_sig, 4), title = "4H Bearish SMT", message = "4H Bearish SMT on {{ticker}}")
+alertcondition(array.get(bull_smt_sig, 5), title = "6H Bullish SMT", message = "6H Bullish SMT on {{ticker}}")
+alertcondition(array.get(bear_smt_sig, 5), title = "6H Bearish SMT", message = "6H Bearish SMT on {{ticker}}")
+alertcondition(array.get(bull_smt_sig, 6), title = "7H Bullish SMT", message = "7H Bullish SMT on {{ticker}}")
+alertcondition(array.get(bear_smt_sig, 6), title = "7H Bearish SMT", message = "7H Bearish SMT on {{ticker}}")
+alertcondition(array.get(bull_smt_sig, 7), title = "1D Bullish SMT", message = "1D Bullish SMT on {{ticker}}")
+alertcondition(array.get(bear_smt_sig, 7), title = "1D Bearish SMT", message = "1D Bearish SMT on {{ticker}}")
+alertcondition(array.get(bull_smt_sig, 8), title = "1W Bullish SMT", message = "1W Bullish SMT on {{ticker}}")
+alertcondition(array.get(bear_smt_sig, 8), title = "1W Bearish SMT", message = "1W Bearish SMT on {{ticker}}")
+alertcondition(array.get(bull_smt_sig, 9), title = "1M Bullish SMT", message = "1M Bullish SMT on {{ticker}}")
+alertcondition(array.get(bear_smt_sig, 9), title = "1M Bearish SMT", message = "1M Bearish SMT on {{ticker}}")
+ 
+alertcondition(array.get(bull_ssmt_sig, 2), title = "90m Bullish SSMT", message = "90m Bullish SSMT on {{ticker}}")
+alertcondition(array.get(bear_ssmt_sig, 2), title = "90m Bearish SSMT", message = "90m Bearish SSMT on {{ticker}}")
+alertcondition(array.get(bull_ssmt_sig, 4), title = "4H Bullish SSMT", message = "4H Bullish SSMT on {{ticker}}")
+alertcondition(array.get(bear_ssmt_sig, 4), title = "4H Bearish SSMT", message = "4H Bearish SSMT on {{ticker}}")
+alertcondition(array.get(bull_ssmt_sig, 5), title = "6H Bullish SSMT", message = "6H Bullish SSMT on {{ticker}}")
+alertcondition(array.get(bear_ssmt_sig, 5), title = "6H Bearish SSMT", message = "6H Bearish SSMT on {{ticker}}")
+alertcondition(array.get(bull_ssmt_sig, 6), title = "7H Bullish SSMT", message = "7H Bullish SSMT on {{ticker}}")
+alertcondition(array.get(bear_ssmt_sig, 6), title = "7H Bearish SSMT", message = "7H Bearish SSMT on {{ticker}}")
+alertcondition(array.get(bull_ssmt_sig, 7), title = "1D Bullish SSMT", message = "1D Bullish SSMT on {{ticker}}")
+alertcondition(array.get(bear_ssmt_sig, 7), title = "1D Bearish SSMT", message = "1D Bearish SSMT on {{ticker}}")
+alertcondition(array.get(bull_ssmt_sig, 8), title = "1W Bullish SSMT", message = "1W Bullish SSMT on {{ticker}}")
+alertcondition(array.get(bear_ssmt_sig, 8), title = "1W Bearish SSMT", message = "1W Bearish SSMT on {{ticker}}")
+alertcondition(array.get(bull_ssmt_sig, 9), title = "1M Bullish SSMT", message = "1M Bullish SSMT on {{ticker}}")
+alertcondition(array.get(bear_ssmt_sig, 9), title = "1M Bearish SSMT", message = "1M Bearish SSMT on {{ticker}}")
+ 
