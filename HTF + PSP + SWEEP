@@ -1,0 +1,998 @@
+//@version=6
+indicator("HTF Panel Candles v8 + PSP + Sweeps", shorttitle = "HTF Panels PSP", overlay = true, max_boxes_count = 500, max_lines_count = 500, max_labels_count = 500, max_bars_back = 5000, calc_bars_count = 3000)
+ 
+ 
+// ═══════════════════════════════════════════════════════════════════════════
+// Extracted from PO3: ONLY the HTF panel settings + HTF panel candles.
+// + PSP (divergence body colouring) and HTF sweeps ported from "cephxs + fadi / HTF PSP".
+// (Credits: (c) fadizeidan, (c) cephxs, (c) fstarcapital - Mozilla Public License 2.0)
+// ═══════════════════════════════════════════════════════════════════════════
+ 
+string g03 = "1. HTF PANELS ________________"
+string g05 = "2. CANDLE STYLE ________________"
+string g06 = "3. PSP DIVERGENCE ________________"
+string g07 = "4. ASSET SELECTION ________________"
+string g08 = "5. HTF SWEEPS ________________"
+ 
+color C_TRANSPARENT = color.new(color.white, 100)
+ 
+// ═════════════ HTF PANELS ═════════════
+bool   htf_auto_count = input.bool(true, 'Auto Count', group = g03, tooltip = 'ON: every HTF panel follows its own timeframe automatically - 4H and above (4H, 6H, 7H, 1D, 1W) = 3 candles, everything below 4H = 5 candles. Turn OFF to use the manual counts.')
+bool   htfOn1 = input.bool(true, 'HTF1', inline = 'hs1', group = g03)
+string htfTf1 = input.string('1H', '', options = ['15m','30m','1H','90m','4H','6H','7H','1D','1W'], inline = 'hs1', group = g03)
+int    htfCnt1 = input.int(5, '', minval = 1, maxval = 60, inline = 'hs1', group = g03, active = not htf_auto_count)
+bool   htfOn2 = input.bool(true, 'HTF2', inline = 'hs2', group = g03)
+string htfTf2 = input.string('4H', '', options = ['15m','30m','1H','90m','4H','6H','7H','1D','1W'], inline = 'hs2', group = g03)
+int    htfCnt2 = input.int(3, '', minval = 1, maxval = 60, inline = 'hs2', group = g03, active = not htf_auto_count)
+bool   htfOn3 = input.bool(true, 'HTF3', inline = 'hs3', group = g03)
+string htfTf3 = input.string('1D', '', options = ['15m','30m','1H','90m','4H','6H','7H','1D','1W'], inline = 'hs3', group = g03)
+int    htfCnt3 = input.int(3, '', minval = 1, maxval = 60, inline = 'hs3', group = g03, active = not htf_auto_count)
+bool   htfOn4 = input.bool(false, 'HTF4', inline = 'hs4', group = g03)
+string htfTf4 = input.string('30m', '', options = ['15m','30m','1H','90m','4H','6H','7H','1D','1W'], inline = 'hs4', group = g03)
+int    htfCnt4 = input.int(5, '', minval = 1, maxval = 60, inline = 'hs4', group = g03, active = not htf_auto_count)
+bool   htfOn5 = input.bool(false, 'HTF5', inline = 'hs5', group = g03)
+string htfTf5 = input.string('6H', '', options = ['15m','30m','1H','90m','4H','6H','7H','1D','1W'], inline = 'hs5', group = g03)
+int    htfCnt5 = input.int(3, '', minval = 1, maxval = 60, inline = 'hs5', group = g03, active = not htf_auto_count)
+bool   htfOn6 = input.bool(false, 'HTF6', inline = 'hs6', group = g03)
+string htfTf6 = input.string('1D', '', options = ['15m','30m','1H','90m','4H','6H','7H','1D','1W'], inline = 'hs6', group = g03)
+int    htfCnt6 = input.int(3, '', minval = 1, maxval = 60, inline = 'hs6', group = g03, active = not htf_auto_count)
+int in_offset    = input.int(25, 'Padding from chart', minval = 1, group = g03)
+int in_width     = input.int(2, 'Candle width', minval = 1, maxval = 4, group = g03)
+int in_buffer    = input.int(1, 'Space between candles', minval = 1, maxval = 4, group = g03)
+int in_htfBuffer = input.int(10, 'Space between HTFs', minval = 2, maxval = 30, group = g03)
+ 
+// ═════════════ CANDLE STYLE ═════════════
+color  in_bullBody   = input.color(#f7f7f7, 'Body', inline = 'cs1', group = g05)
+color  in_bearBody   = input.color(#616161, '', inline = 'cs1', group = g05)
+color  in_bullBorder = input.color(#9c9c9c, 'Border', inline = 'cs2', group = g05)
+color  in_bearBorder = input.color(#4a4a4a, '', inline = 'cs2', group = g05)
+color  in_bullWick   = input.color(#9c9c9c, 'Wick', inline = 'cs3', group = g05)
+color  in_bearWick   = input.color(#9c9c9c, '', inline = 'cs3', group = g05)
+bool   in_htfLblOn   = input.bool(true, 'HTF Label', inline = 'cs5', group = g05)
+color  in_lblColor   = input.color(#2e2e2e, '', inline = 'cs5', group = g05)
+string in_lblSize    = input.string(size.small, '', [size.tiny, size.small, size.normal, size.large, size.huge], inline = 'cs5', group = g05)
+bool   in_tmrOn      = input.bool(true, 'Remaining Time', inline = 'cs6', group = g05)
+color  in_tmrColor   = input.color(#9c9c9c, '', inline = 'cs6', group = g05)
+string in_tmrSize    = input.string(size.tiny, '', [size.tiny, size.small, size.normal, size.large, size.huge], inline = 'cs6', group = g05)
+string in_lblPos     = input.string('Both', 'Label Position', options = ['Top', 'Bottom', 'Both'], group = g05)
+string in_lblAlign   = input.string('Align', 'Label Alignment', options = ['Follow Candles', 'Align'], group = g05)
+ 
+// ═════════════ PSP DIVERGENCE ═════════════
+bool   psp_on               = input.bool(true, 'Enable PSP', group = g06, tooltip = 'Colours the HTF candle body when the chart asset and its correlated assets close in opposite directions.')
+string psp_mode             = input.string('PC', 'Mode', options = ['PC', 'PSP'], group = g06, tooltip = 'PC = colour every HTF candle that diverges from the correlated assets. PSP = colour only divergent candles that are also pivots.')
+bool   psp_precise_mode     = input.bool(false, 'Precise Mode', group = g06, tooltip = 'Only highlight pivots on current asset (not correlated assets).')
+color  psp_bull_div_body    = input.color(color.new(#00adef, 30), 'PSP Colour', inline = 'pspc', group = g06)
+color  psp_bear_div_body    = input.color(color.new(#db5755, 30), '', inline = 'pspc', group = g06)
+string psp_style            = input.string('None', 'PSP Highlight', options = ['None', 'Body', 'Border'], group = g06, tooltip = 'How a PSP / divergence candle is shown. None leaves every candle exactly as normal; Body recolours the candle body; Border recolours only the candle border.')
+bool   psp_faster_detection = true
+ 
+// ═════════════ ASSET SELECTION ═════════════
+string assetPreset       = input.string('Auto', 'Correlation Preset', options = ['Auto', 'Manual'], group = g07, tooltip = 'Asset correlation preset. Auto detects based on current chart.')
+string psp_manual_asset1 = input.symbol('', 'Manual Asset 1', group = g07, active = assetPreset == 'Manual')
+string psp_manual_asset2 = input.symbol('', 'Manual Asset 2', group = g07, active = assetPreset == 'Manual')
+string psp_manual_asset3 = input.symbol('', 'Manual Asset 3', group = g07, active = assetPreset == 'Manual')
+bool   psp_invert_asset3 = input.bool(false, 'Invert Asset 3', group = g07, tooltip = 'Invert bullish/bearish for Asset 3 (e.g., for inverse correlations like DXY). This flag follows Asset 3 when reordered.', active = assetPreset == 'Manual')
+ 
+// ═════════════ HTF SWEEPS ═════════════
+bool   in_sweepOn    = input.bool(true, 'HTF Sweeps', inline = 'sw', group = g08)
+color  in_sweepColor = input.color(color.new(#4a4a4a, 0), '', inline = 'sw', group = g08)
+string in_sweepStyle = input.string('⎯⎯⎯', '', options = ['⎯⎯⎯', '----', '····'], inline = 'sw', group = g08)
+bool   in_sweepInval = input.bool(true, 'Remove sweep when price closes back through it', group = g08)
+ 
+// matchAsset helper: Determines if chart matches a given asset ticker
+matchAsset(string assetTicker) =>
+    if str.length(assetTicker) == 0
+        false
+    else
+        string chartTicker = syminfo.ticker
+        string chartTickerId = syminfo.tickerid
+        bool isFutures = syminfo.type == "futures"
+        bool result = false
+        if isFutures
+            result := str.contains(chartTickerId, assetTicker) or str.contains(assetTicker, chartTicker)
+        else
+            result := str.contains(chartTickerId, assetTicker) or str.contains(assetTicker, chartTicker) or str.contains(chartTicker, syminfo.ticker(assetTicker))
+        result
+ 
+int populatedAssetCount = (str.length(psp_manual_asset1) > 0 ? 1 : 0) + (str.length(psp_manual_asset2) > 0 ? 1 : 0) + (str.length(psp_manual_asset3) > 0 ? 1 : 0)
+bool matchesAsset1 = matchAsset(psp_manual_asset1)
+bool matchesAsset2 = matchAsset(psp_manual_asset2)
+bool matchesAsset3 = matchAsset(psp_manual_asset3)
+bool chartInManualAssets = matchesAsset1 or matchesAsset2 or matchesAsset3
+bool manualAssetsValid = assetPreset == 'Manual' and populatedAssetCount >= 2 and chartInManualAssets
+ 
+// Dynamically reorder assets so the chart becomes primary (Asset 3's invert flag follows it)
+string resolvedPrimary = ''
+string resolvedSecondary = ''
+string resolvedTertiary = ''
+bool resolvedInvertSecondary = false
+bool resolvedInvertTertiary = false
+ 
+if manualAssetsValid
+    if matchesAsset1
+        resolvedPrimary := psp_manual_asset1
+        resolvedSecondary := str.length(psp_manual_asset2) > 0 ? psp_manual_asset2 : psp_manual_asset3
+        resolvedTertiary := str.length(psp_manual_asset2) > 0 and str.length(psp_manual_asset3) > 0 ? psp_manual_asset3 : ''
+        resolvedInvertSecondary := str.length(psp_manual_asset2) == 0 and psp_invert_asset3
+        resolvedInvertTertiary := str.length(psp_manual_asset2) > 0 and psp_invert_asset3
+    else if matchesAsset2
+        resolvedPrimary := psp_manual_asset2
+        resolvedSecondary := str.length(psp_manual_asset1) > 0 ? psp_manual_asset1 : psp_manual_asset3
+        resolvedTertiary := str.length(psp_manual_asset1) > 0 and str.length(psp_manual_asset3) > 0 ? psp_manual_asset3 : ''
+        resolvedInvertSecondary := str.length(psp_manual_asset1) == 0 and psp_invert_asset3
+        resolvedInvertTertiary := str.length(psp_manual_asset1) > 0 and psp_invert_asset3
+    else if matchesAsset3
+        resolvedPrimary := psp_manual_asset3
+        resolvedSecondary := str.length(psp_manual_asset1) > 0 ? psp_manual_asset1 : psp_manual_asset2
+        resolvedTertiary := str.length(psp_manual_asset1) > 0 and str.length(psp_manual_asset2) > 0 ? psp_manual_asset2 : ''
+        resolvedInvertSecondary := psp_invert_asset3
+        resolvedInvertTertiary := psp_invert_asset3
+ 
+// ═════════════ TYPES ═════════════
+type Candle
+    float o
+    float c
+    float h
+    float l
+    int o_time
+    int bar_idx
+    int high_bar_idx
+    int low_bar_idx
+    box body
+    line wick_up
+    line wick_down
+    bool has_divergence
+    bool is_bullish_div
+    bool is_psp
+    bool divergence12
+    bool divergence13
+    bool divergence23
+    array<line> sweep_lines
+    array<int> sweep_c1_indices
+    array<bool> sweep_is_bullish
+    array<float> sweep_c1_levels
+ 
+type CandleSettings
+    bool show
+    string htf
+    int max_display
+    float own_o
+    float own_h
+    float own_l
+    float own_c
+ 
+type Settings
+    color bull_body
+    color bull_border
+    color bull_wick
+    color bear_body
+    color bear_border
+    color bear_wick
+    int offset
+    int buffer
+    int htf_buffer
+    int width
+    string label_position
+    string label_alignment
+    bool sweep_show
+    color sweep_color
+    string sweep_style
+    int sweep_width
+    bool sweep_invalidate
+    bool htf_label_show
+    color htf_label_color
+    string htf_label_size
+    bool htf_timer_show
+    color htf_timer_color
+    string htf_timer_size
+ 
+type AssetConfig
+    string primary
+    string secondary
+    string tertiary
+    bool invertSecondary
+    bool invertTertiary
+ 
+type AssetData
+    string symbol
+    bool invert
+    bool include
+    float data_open
+    float data_close
+    float data_high
+    float data_low
+    bool bullish
+    bool bearish
+    bool has_data
+ 
+type HTFDivergenceSettings
+    string preset
+    string mode
+    bool precise_mode
+    bool faster_detection
+    bool invert_asset3
+    string manual_asset1
+    string manual_asset2
+    string manual_asset3
+    color bull_div_body
+    color bear_div_body
+ 
+method applyUniversalPSP(HTFDivergenceSettings this, string preset, string mode, bool precise, bool faster, bool invert3, color bullBody, color bearBody, string asset1, string asset2, string asset3) =>
+    this.preset := preset
+    this.mode := mode
+    this.precise_mode := precise
+    this.faster_detection := faster
+    this.invert_asset3 := invert3
+    this.bull_div_body := bullBody
+    this.bear_div_body := bearBody
+    this.manual_asset1 := asset1
+    this.manual_asset2 := asset2
+    this.manual_asset3 := asset3
+    this
+ 
+type CandleSet
+    array<Candle> candles
+    CandleSettings settings
+    label tfNameTop
+    label tfNameBottom
+    label tfTimerTop
+    label tfTimerBottom
+    HTFDivergenceSettings div_settings
+    AssetData asset1
+    AssetData asset2
+    AssetData asset3
+ 
+Settings settings = Settings.new()
+var CandleSettings SettingsHTF1 = CandleSettings.new()
+var CandleSettings SettingsHTF2 = CandleSettings.new()
+var CandleSettings SettingsHTF3 = CandleSettings.new()
+var CandleSettings SettingsHTF4 = CandleSettings.new()
+var CandleSettings SettingsHTF5 = CandleSettings.new()
+var CandleSettings SettingsHTF6 = CandleSettings.new()
+var HTFDivergenceSettings DivSettingsHTF1 = HTFDivergenceSettings.new()
+var HTFDivergenceSettings DivSettingsHTF2 = HTFDivergenceSettings.new()
+var HTFDivergenceSettings DivSettingsHTF3 = HTFDivergenceSettings.new()
+var HTFDivergenceSettings DivSettingsHTF4 = HTFDivergenceSettings.new()
+var HTFDivergenceSettings DivSettingsHTF5 = HTFDivergenceSettings.new()
+var HTFDivergenceSettings DivSettingsHTF6 = HTFDivergenceSettings.new()
+var array<Candle> candles_1 = array.new<Candle>(0)
+var array<Candle> candles_2 = array.new<Candle>(0)
+var array<Candle> candles_3 = array.new<Candle>(0)
+var array<Candle> candles_4 = array.new<Candle>(0)
+var array<Candle> candles_5 = array.new<Candle>(0)
+var array<Candle> candles_6 = array.new<Candle>(0)
+ 
+var CandleSet htf1 = CandleSet.new()
+htf1.settings := SettingsHTF1
+htf1.div_settings := DivSettingsHTF1
+htf1.candles := candles_1
+var CandleSet htf2 = CandleSet.new()
+htf2.settings := SettingsHTF2
+htf2.div_settings := DivSettingsHTF2
+htf2.candles := candles_2
+var CandleSet htf3 = CandleSet.new()
+htf3.settings := SettingsHTF3
+htf3.div_settings := DivSettingsHTF3
+htf3.candles := candles_3
+var CandleSet htf4 = CandleSet.new()
+htf4.settings := SettingsHTF4
+htf4.div_settings := DivSettingsHTF4
+htf4.candles := candles_4
+var CandleSet htf5 = CandleSet.new()
+htf5.settings := SettingsHTF5
+htf5.div_settings := DivSettingsHTF5
+htf5.candles := candles_5
+var CandleSet htf6 = CandleSet.new()
+htf6.settings := SettingsHTF6
+htf6.div_settings := DivSettingsHTF6
+htf6.candles := candles_6
+ 
+var array<CandleSet> allSets = array.from(htf1, htf2, htf3, htf4, htf5, htf6)
+ 
+f_tfMap(string s) =>
+    switch s
+        '15m' => '15'
+        '30m' => '30'
+        '1H'  => '60'
+        '90m' => '90'
+        '4H'  => '240'
+        '6H'  => '360'
+        '7H'  => '420'
+        '1D'  => 'D'
+        '1W'  => 'W'
+        =>       '60'
+ 
+// ═════════════ AUTO COUNT (per panel timeframe) ═════════════
+// 4H, 6H, 7H, 1D and above = 3 candles; everything else = 5 candles
+f_autoCount(string tf) =>
+    int sec = timeframe.in_seconds(tf)
+    sec >= 14400 ? 3 : 5
+ 
+int cnt1 = htf_auto_count ? f_autoCount(f_tfMap(htfTf1)) : htfCnt1
+int cnt2 = htf_auto_count ? f_autoCount(f_tfMap(htfTf2)) : htfCnt2
+int cnt3 = htf_auto_count ? f_autoCount(f_tfMap(htfTf3)) : htfCnt3
+int cnt4 = htf_auto_count ? f_autoCount(f_tfMap(htfTf4)) : htfCnt4
+int cnt5 = htf_auto_count ? f_autoCount(f_tfMap(htfTf5)) : htfCnt5
+int cnt6 = htf_auto_count ? f_autoCount(f_tfMap(htfTf6)) : htfCnt6
+ 
+// Candle fill is composited over the chart background (opaque, like BUBBLY panes)
+f_opaque(color c) =>
+    float a = 1.0 - color.t(c) / 100.0
+    color bg = chart.bg_color
+    color.rgb(int(math.round(color.r(c) * a + color.r(bg) * (1.0 - a))), int(math.round(color.g(c) * a + color.g(bg) * (1.0 - a))), int(math.round(color.b(c) * a + color.b(bg) * (1.0 - a))))
+ 
+htf1.settings.show := htfOn1
+htf2.settings.show := htfOn2
+htf3.settings.show := htfOn3
+htf4.settings.show := htfOn4
+htf5.settings.show := htfOn5
+htf6.settings.show := htfOn6
+ 
+settings.bull_body     := in_bullBody
+settings.bear_body     := in_bearBody
+settings.bull_border   := in_bullBorder
+settings.bear_border   := in_bearBorder
+settings.bull_wick     := in_bullWick
+settings.bear_wick     := in_bearWick
+settings.offset        := in_offset
+settings.width         := in_width * 2
+settings.buffer        := in_buffer
+settings.htf_buffer    := in_htfBuffer
+settings.htf_label_color := in_lblColor
+settings.htf_label_size  := in_lblSize
+settings.htf_timer_color := in_tmrColor
+settings.htf_timer_size  := in_tmrSize
+settings.htf_timer_show  := in_tmrOn
+settings.htf_label_show  := in_htfLblOn
+settings.label_position  := in_lblPos
+settings.label_alignment := in_lblAlign
+settings.sweep_show      := in_sweepOn
+settings.sweep_color     := in_sweepColor
+settings.sweep_style     := in_sweepStyle
+settings.sweep_width     := 1
+settings.sweep_invalidate := in_sweepInval
+ 
+string pspPreset = psp_on ? assetPreset : 'Off'
+DivSettingsHTF1.applyUniversalPSP(pspPreset, psp_mode, psp_precise_mode, psp_faster_detection, resolvedInvertTertiary, psp_bull_div_body, psp_bear_div_body, resolvedPrimary, resolvedSecondary, resolvedTertiary)
+DivSettingsHTF2.applyUniversalPSP(pspPreset, psp_mode, psp_precise_mode, psp_faster_detection, resolvedInvertTertiary, psp_bull_div_body, psp_bear_div_body, resolvedPrimary, resolvedSecondary, resolvedTertiary)
+DivSettingsHTF3.applyUniversalPSP(pspPreset, psp_mode, psp_precise_mode, psp_faster_detection, resolvedInvertTertiary, psp_bull_div_body, psp_bear_div_body, resolvedPrimary, resolvedSecondary, resolvedTertiary)
+DivSettingsHTF4.applyUniversalPSP(pspPreset, psp_mode, psp_precise_mode, psp_faster_detection, resolvedInvertTertiary, psp_bull_div_body, psp_bear_div_body, resolvedPrimary, resolvedSecondary, resolvedTertiary)
+DivSettingsHTF5.applyUniversalPSP(pspPreset, psp_mode, psp_precise_mode, psp_faster_detection, resolvedInvertTertiary, psp_bull_div_body, psp_bear_div_body, resolvedPrimary, resolvedSecondary, resolvedTertiary)
+DivSettingsHTF6.applyUniversalPSP(pspPreset, psp_mode, psp_precise_mode, psp_faster_detection, resolvedInvertTertiary, psp_bull_div_body, psp_bear_div_body, resolvedPrimary, resolvedSecondary, resolvedTertiary)
+ 
+color color_transparent = #ffffff00
+ 
+// ═════════════ UTILITIES ═════════════
+ValidTimeframe(string HTF) =>
+    int chartSeconds = timeframe.in_seconds(timeframe.period)
+    int htfSeconds = timeframe.in_seconds(HTF)
+    not na(chartSeconds) and not na(htfSeconds) and htfSeconds > chartSeconds
+ 
+RemainingTime(string HTF) =>
+    if barstate.isrealtime
+        timeRemaining = (time_close(HTF) - timenow) / 1000
+        days = math.floor(timeRemaining / 86400)
+        hours = math.floor((timeRemaining - days * 86400) / 3600)
+        minutes = math.floor((timeRemaining - days * 86400 - hours * 3600) / 60)
+        seconds = math.floor(timeRemaining - days * 86400 - hours * 3600 - minutes * 60)
+        r = str.tostring(seconds, '00')
+        if minutes > 0 or hours > 0 or days > 0
+            r := str.tostring(minutes, '00') + ':' + r
+        if hours > 0 or days > 0
+            r := str.tostring(hours, '00') + ':' + r
+        if days > 0
+            r := str.tostring(days) + 'D ' + r
+        r
+    else
+        'n/a'
+ 
+HTFName(string HTF) =>
+    seconds = timeframe.in_seconds(HTF)
+    seconds < 60 ? str.tostring(seconds) + 's' : seconds / 60 < 60 ? str.tostring(seconds / 60) + 'm' : seconds / 60 / 60 < 24 ? str.tostring(seconds / 60 / 60) + 'H' : HTF
+ 
+method CandleSetHigh(array<Candle> candles, float h) =>
+    _h = h
+    if array.size(candles) > 0
+        for i = 0 to array.size(candles) - 1
+            Candle c = array.get(candles, i)
+            if c.h > _h
+                _h := c.h
+    _h
+ 
+method CandleSetLow(array<Candle> candles, float l) =>
+    _l = l
+    if array.size(candles) > 0
+        for i = 0 to array.size(candles) - 1
+            Candle c = array.get(candles, i)
+            if c.l < _l
+                _l := c.l
+    _l
+ 
+// Highest / lowest across ALL enabled panels (used for 'Align' label mode)
+f_allHigh(array<Candle> candles) =>
+    float h = 0.0
+    for s in allSets
+        if s.settings.show and ValidTimeframe(s.settings.htf)
+            h := s.candles.CandleSetHigh(h)
+    if array.size(candles) > 0
+        for i = 0 to array.size(candles) - 1
+            Candle c = array.get(candles, i)
+            if c.h > h
+                h := c.h
+    h
+ 
+f_allLow(array<Candle> candles, float startVal) =>
+    float l = startVal
+    for s in allSets
+        if s.settings.show and ValidTimeframe(s.settings.htf)
+            l := s.candles.CandleSetLow(l)
+    if array.size(candles) > 0
+        for i = 0 to array.size(candles) - 1
+            Candle c = array.get(candles, i)
+            if c.l < l
+                l := c.l
+    l
+ 
+// ═════════════ PSP + SWEEPS (ported from cephxs + fadi / HTF PSP) ═════════════
+f_lineStyle(string style) =>
+    switch style
+        '----' => line.style_dashed
+        '····' => line.style_dotted
+        => line.style_solid
+ 
+// Built-in Auto correlation sets (replaces the external library). Primary is always the chart symbol.
+// Unknown symbols return empty secondary/tertiary -> no PSP; use the Manual preset for those.
+f_resolveChart() =>
+    string t = str.upper(syminfo.root)
+    string s2 = ''
+    string s3 = ''
+    bool i2 = false
+    bool i3 = false
+    if t == 'NQ' or t == 'MNQ'
+        s2 := 'CME_MINI:ES1!'
+        s3 := 'CBOT_MINI:YM1!'
+    else if t == 'ES' or t == 'MES'
+        s2 := 'CME_MINI:NQ1!'
+        s3 := 'CBOT_MINI:YM1!'
+    else if t == 'YM' or t == 'MYM'
+        s2 := 'CME_MINI:ES1!'
+        s3 := 'CME_MINI:NQ1!'
+    else if t == 'NAS100USD' or t == 'US100'
+        s2 := 'OANDA:SPX500USD'
+        s3 := 'OANDA:US30USD'
+    else if t == 'SPX500USD' or t == 'US500'
+        s2 := 'OANDA:NAS100USD'
+        s3 := 'OANDA:US30USD'
+    else if t == 'US30USD' or t == 'US30'
+        s2 := 'OANDA:SPX500USD'
+        s3 := 'OANDA:NAS100USD'
+    else if t == 'EURUSD' or t == '6E'
+        s2 := 'OANDA:GBPUSD'
+        s3 := 'TVC:DXY'
+        i3 := true
+    else if t == 'GBPUSD' or t == '6B'
+        s2 := 'OANDA:EURUSD'
+        s3 := 'TVC:DXY'
+        i3 := true
+    else if t == 'DXY'
+        s2 := 'OANDA:EURUSD'
+        s3 := 'OANDA:GBPUSD'
+        i2 := true
+        i3 := true
+    else if t == 'XAUUSD' or t == 'GC' or t == 'MGC'
+        s2 := 'COMEX:SI1!'
+        s3 := 'TVC:DXY'
+        i3 := true
+    else if t == 'XAGUSD' or t == 'SI'
+        s2 := 'COMEX:GC1!'
+        s3 := 'TVC:DXY'
+        i3 := true
+    else if t == 'BTCUSD' or t == 'BTCUSDT'
+        s2 := 'BITSTAMP:ETHUSD'
+    else if t == 'ETHUSD' or t == 'ETHUSDT'
+        s2 := 'BITSTAMP:BTCUSD'
+    AssetConfig.new(syminfo.tickerid, s2, s3, i2, i3)
+ 
+isValidSymbol(string sym) =>
+    not na(sym) and str.length(sym) > 0
+ 
+method InitAssets(CandleSet this) =>
+    this.asset1 := AssetData.new()
+    this.asset2 := AssetData.new()
+    this.asset3 := AssetData.new()
+    this
+ 
+method SetAssetIncludes(CandleSet this) =>
+    this.asset1.include := true
+    this.asset2.include := this.asset2.symbol != ''
+    this.asset3.include := this.asset3.symbol != ''
+    this
+ 
+method ApplyAutoAssets(CandleSet this, AssetConfig config) =>
+    this.asset1.symbol := config.primary
+    this.asset2.symbol := isValidSymbol(config.secondary) ? config.secondary : ''
+    this.asset3.symbol := isValidSymbol(config.tertiary) ? config.tertiary : ''
+    this.asset2.invert := config.invertSecondary
+    this.asset3.invert := config.invertTertiary
+    this
+ 
+method FetchHTFOHLC(CandleSet this, string htf, Candle htfCandle) =>
+    if this.asset1.symbol != '' and this.asset1.include
+        this.asset1.data_open := htfCandle.o
+        this.asset1.data_close := htfCandle.c
+        this.asset1.data_high := htfCandle.h
+        this.asset1.data_low := htfCandle.l
+        this.asset1.has_data := true
+    if this.asset2.symbol != '' and this.asset2.include
+        [o2, h2, l2, c2] = request.security(this.asset2.symbol, htf, [open, high, low, close], lookahead = barmerge.lookahead_on)
+        this.asset2.data_open := o2
+        this.asset2.data_close := c2
+        this.asset2.data_high := h2
+        this.asset2.data_low := l2
+        this.asset2.has_data := not na(o2)
+    if this.asset3.symbol != '' and this.asset3.include
+        [o3, h3, l3, c3] = request.security(this.asset3.symbol, htf, [open, high, low, close], lookahead = barmerge.lookahead_on)
+        this.asset3.data_open := o3
+        this.asset3.data_close := c3
+        this.asset3.data_high := h3
+        this.asset3.data_low := l3
+        this.asset3.has_data := not na(o3)
+    this
+ 
+method CalculateHTFBullishBearish(CandleSet this) =>
+    if this.asset1.has_data
+        this.asset1.bullish := this.asset1.invert ? this.asset1.data_close < this.asset1.data_open : this.asset1.data_close > this.asset1.data_open
+        this.asset1.bearish := this.asset1.invert ? this.asset1.data_close > this.asset1.data_open : this.asset1.data_close < this.asset1.data_open
+    if this.asset2.has_data
+        this.asset2.bullish := this.asset2.invert ? this.asset2.data_close < this.asset2.data_open : this.asset2.data_close > this.asset2.data_open
+        this.asset2.bearish := this.asset2.invert ? this.asset2.data_close > this.asset2.data_open : this.asset2.data_close < this.asset2.data_open
+    if this.asset3.has_data
+        this.asset3.bullish := this.asset3.invert ? this.asset3.data_close < this.asset3.data_open : this.asset3.data_close > this.asset3.data_open
+        this.asset3.bearish := this.asset3.invert ? this.asset3.data_close > this.asset3.data_open : this.asset3.data_close < this.asset3.data_open
+    this
+ 
+method DetectHTFDivergence(Candle candle, CandleSet this) =>
+    candle.divergence12 := this.asset2.has_data and ((this.asset1.bullish and this.asset2.bearish) or (this.asset1.bearish and this.asset2.bullish))
+    candle.divergence13 := this.asset3.has_data and ((this.asset1.bullish and this.asset3.bearish) or (this.asset1.bearish and this.asset3.bullish))
+    candle.divergence23 := this.asset2.has_data and this.asset3.has_data and ((this.asset2.bullish and this.asset3.bearish) or (this.asset2.bearish and this.asset3.bullish))
+    candle.has_divergence := candle.divergence12 or candle.divergence13 or candle.divergence23
+    candle.is_bullish_div := this.asset1.bullish
+    candle
+ 
+method DetectHTFPivots(Candle candle, CandleSet this, string htf) =>
+    bool has_pivot_1 = false
+    bool has_pivot_2 = false
+    bool has_pivot_3 = false
+ 
+    if this.candles.size() >= 3
+        Candle prev1 = this.candles.get(1)
+        Candle prev2 = this.candles.get(2)
+        is_pivot_high = prev1.h > prev2.h and prev1.h > candle.h
+        is_pivot_low = prev1.l < prev2.l and prev1.l < candle.l
+        has_pivot_1 := is_pivot_high or is_pivot_low
+ 
+    if this.asset2.has_data
+        pivothigh_2 = request.security(this.asset2.symbol, htf, ta.pivothigh(high, 1, 1), lookahead = barmerge.lookahead_on)
+        pivotlow_2 = request.security(this.asset2.symbol, htf, ta.pivotlow(low, 1, 1), lookahead = barmerge.lookahead_on)
+        has_pivot_2 := not na(pivothigh_2) or not na(pivotlow_2)
+ 
+    if this.asset3.has_data
+        pivothigh_3 = request.security(this.asset3.symbol, htf, ta.pivothigh(high, 1, 1), lookahead = barmerge.lookahead_on)
+        pivotlow_3 = request.security(this.asset3.symbol, htf, ta.pivotlow(low, 1, 1), lookahead = barmerge.lookahead_on)
+        has_pivot_3 := not na(pivothigh_3) or not na(pivotlow_3)
+ 
+    is_pivot = this.div_settings.precise_mode ? has_pivot_1 : (has_pivot_1 or has_pivot_2 or has_pivot_3)
+    candle.is_psp := is_pivot and candle.has_divergence
+    candle
+ 
+// Re-evaluates divergence / PSP for one candle
+method PSPRefresh(CandleSet this, Candle candle) =>
+    if this.div_settings.preset != 'Off'
+        if this.div_settings.preset == 'Manual'
+            this.asset2.symbol := this.div_settings.manual_asset2
+            this.asset3.symbol := this.div_settings.manual_asset3
+        this.FetchHTFOHLC(this.settings.htf, candle).CalculateHTFBullishBearish()
+        candle.DetectHTFDivergence(this).DetectHTFPivots(this, this.settings.htf)
+    this
+ 
+method PSPActive(CandleSet this, Candle candle) =>
+    this.div_settings.preset != 'Off' and (this.div_settings.mode == 'PSP' ? candle.is_psp : candle.has_divergence)
+ 
+clearAllHTFCandleSweeps(Candle candle) =>
+    if not na(candle.sweep_lines) and candle.sweep_lines.size() > 0
+        for i = candle.sweep_lines.size() - 1 to 0 by 1
+            line l = candle.sweep_lines.get(i)
+            if not na(l)
+                line.delete(l)
+        candle.sweep_lines.clear()
+        candle.sweep_c1_indices.clear()
+        candle.sweep_is_bullish.clear()
+        candle.sweep_c1_levels.clear()
+    true
+ 
+// C2 (newest candle, index 0) sweeps C1 (index 1): takes its low/high and closes back inside.
+// If C2 took BOTH sides of C1, the side that was hit first (by bar) is the one that gets marked.
+method DetectCandleSetSweeps(CandleSet candleSet) =>
+    if candleSet.candles.size() >= 2 and settings.sweep_show
+        Candle c2 = candleSet.candles.get(0)
+        Candle c1 = candleSet.candles.get(1)
+        bool bullishSweep = c2.l < c1.l and c2.c > c1.l
+        bool bearishSweep = c2.h > c1.h and c2.c < c1.h
+        if bullishSweep and bearishSweep
+            if c2.high_bar_idx <= c2.low_bar_idx
+                bullishSweep := false
+            else
+                bearishSweep := false
+        if (bullishSweep or bearishSweep) and not na(c1.body) and not na(c2.body)
+            float yLevel = bullishSweep ? c1.l : c1.h
+            bool alreadyHasSweep = false
+            if not na(c2.sweep_lines) and c2.sweep_lines.size() > 0
+                for i = c2.sweep_lines.size() - 1 to 0 by 1
+                    if c2.sweep_c1_indices.get(i) == c1.bar_idx
+                        if c2.sweep_c1_levels.get(i) == yLevel
+                            alreadyHasSweep := true
+                        else
+                            line oldLine = c2.sweep_lines.get(i)
+                            if not na(oldLine)
+                                line.delete(oldLine)
+                            c2.sweep_lines.remove(i)
+                            c2.sweep_c1_indices.remove(i)
+                            c2.sweep_is_bullish.remove(i)
+                            c2.sweep_c1_levels.remove(i)
+            if not alreadyHasSweep
+                int x1 = box.get_left(c1.body) + 1
+                int x2 = box.get_right(c2.body)
+                line sweepLine = line.new(x1, yLevel, x2, yLevel, color = settings.sweep_color, style = f_lineStyle(settings.sweep_style), width = settings.sweep_width)
+                c2.sweep_lines.push(sweepLine)
+                c2.sweep_c1_indices.push(c1.bar_idx)
+                c2.sweep_is_bullish.push(bullishSweep)
+                c2.sweep_c1_levels.push(yLevel)
+    candleSet
+ 
+// ═════════════ PANEL METHODS ═════════════
+method UpdateTime(CandleSet candleSet, int offset) =>
+    if settings.htf_timer_show and (barstate.isrealtime or barstate.islast)
+        string tmr = '(' + RemainingTime(candleSet.settings.htf) + ')'
+        if not na(candleSet.tfTimerTop)
+            candleSet.tfTimerTop.set_text(tmr)
+        if not na(candleSet.tfTimerBottom)
+            candleSet.tfTimerBottom.set_text(tmr)
+    candleSet
+ 
+method Reorder(CandleSet candleSet, int offset) =>
+    size = candleSet.candles.size()
+    if size > 0
+        for i = size - 1 to 0 by 1
+            Candle candle = candleSet.candles.get(i)
+            t_buffer = offset + (settings.width + settings.buffer) * (size - i - 1)
+            box.set_left(candle.body, bar_index + t_buffer)
+            box.set_right(candle.body, bar_index + settings.width + t_buffer)
+            line.set_x1(candle.wick_up, bar_index + settings.width / 2 + t_buffer)
+            line.set_x2(candle.wick_up, bar_index + settings.width / 2 + t_buffer)
+            line.set_x1(candle.wick_down, bar_index + settings.width / 2 + t_buffer)
+            line.set_x2(candle.wick_down, bar_index + settings.width / 2 + t_buffer)
+ 
+            // HTF sweep lines: from C1's wick to C3's wick (or C2's right edge when there is no C3)
+            if settings.sweep_show and not na(candle.sweep_lines) and candle.sweep_lines.size() > 0
+                int c3WickX = int(bar_index + settings.width + t_buffer)
+                if i > 0
+                    int c3_t_buffer = offset + (settings.width + settings.buffer) * (size - (i - 1) - 1)
+                    c3WickX := int(bar_index + settings.width / 2 + c3_t_buffer)
+                if i + 1 < size
+                    Candle c1Candle = candleSet.candles.get(i + 1)
+                    int c1_t_buffer = offset + (settings.width + settings.buffer) * (size - (i + 1) - 1)
+                    int c1WickX = int(bar_index + settings.width / 2 + c1_t_buffer)
+                    for sweepIdx = candle.sweep_lines.size() - 1 to 0 by 1
+                        line sweepLine = candle.sweep_lines.get(sweepIdx)
+                        float c1Level = candle.sweep_c1_levels.get(sweepIdx)
+                        if not na(sweepLine) and not na(c1Candle.body)
+                            line.set_x1(sweepLine, c1WickX)
+                            line.set_x2(sweepLine, c3WickX)
+                            line.set_y1(sweepLine, c1Level)
+                            line.set_y2(sweepLine, c1Level)
+                else
+                    clearAllHTFCandleSweeps(candle)
+    top = 0.0
+    bottom = 0.0
+    if settings.label_alignment == 'Align'
+        top := f_allHigh(candleSet.candles)
+        bottom := f_allLow(candleSet.candles, top)
+    if settings.label_alignment == 'Follow Candles'
+        top := candleSet.candles.CandleSetHigh(0)
+        bottom := candleSet.candles.CandleSetLow(top)
+    float lblPad = math.max(math.abs(top - bottom) * 0.06, syminfo.mintick * 12.0)
+    top += lblPad
+    bottom -= lblPad
+    left = bar_index + offset + (settings.width + settings.buffer) * (size - 1) / 2
+    if settings.htf_label_show
+        string lblt = HTFName(candleSet.settings.htf)
+        string lbll = lblt
+        if settings.htf_timer_show
+            lblt := lblt + '\n'
+            lbll := '\n' + lbll
+        string tmr = '(' + RemainingTime(candleSet.settings.htf) + ')'
+        if settings.label_position == 'Both' or settings.label_position == 'Top'
+            if not na(candleSet.tfNameTop)
+                candleSet.tfNameTop.set_xy(left, top)
+            else
+                candleSet.tfNameTop := label.new(left, top, lblt, color = color_transparent, textcolor = settings.htf_label_color, style = label.style_label_down, size = settings.htf_label_size, text_formatting = text.format_bold)
+            if settings.htf_timer_show
+                if not na(candleSet.tfTimerTop)
+                    candleSet.tfTimerTop.set_xy(left, top)
+                else
+                    candleSet.tfTimerTop := label.new(left, top, tmr, color = color_transparent, textcolor = settings.htf_timer_color, style = label.style_label_down, size = settings.htf_timer_size, text_formatting = text.format_bold)
+        if settings.label_position == 'Both' or settings.label_position == 'Bottom'
+            if not na(candleSet.tfNameBottom)
+                candleSet.tfNameBottom.set_xy(left, bottom)
+            else
+                candleSet.tfNameBottom := label.new(left, bottom, lbll, color = color_transparent, textcolor = settings.htf_label_color, style = label.style_label_up, size = settings.htf_label_size, text_formatting = text.format_bold)
+            if settings.htf_timer_show
+                if not na(candleSet.tfTimerBottom)
+                    candleSet.tfTimerBottom.set_xy(left, bottom)
+                else
+                    candleSet.tfTimerBottom := label.new(left, bottom, tmr, color = color_transparent, textcolor = settings.htf_timer_color, style = label.style_label_up, size = settings.htf_timer_size, text_formatting = text.format_bold)
+    candleSet
+ 
+method Monitor(CandleSet candleSet) =>
+    int HTFBarTime = time(candleSet.settings.htf)
+    isNewHTFCandle = ta.change(HTFBarTime) > 0
+    if isNewHTFCandle
+        Candle candle = Candle.new()
+        candle.o := nz(candleSet.settings.own_o, open)
+        candle.c := nz(candleSet.settings.own_c, close)
+        candle.h := nz(candleSet.settings.own_h, high)
+        candle.l := nz(candleSet.settings.own_l, low)
+        candle.o_time := HTFBarTime
+        candle.bar_idx := bar_index
+        candle.high_bar_idx := bar_index
+        candle.low_bar_idx := bar_index
+        bull = candle.c > candle.o
+        candleSet.PSPRefresh(candle)
+        bool pspOn = candleSet.PSPActive(candle)
+        color bodyColor = f_opaque(pspOn and psp_style == 'Body' ? (candle.is_bullish_div ? psp_bull_div_body : psp_bear_div_body) : (bull ? settings.bull_body : settings.bear_body))
+        color borderColor = pspOn and psp_style == 'Border' ? (candle.is_bullish_div ? psp_bull_div_body : psp_bear_div_body) : (bull ? settings.bull_border : settings.bear_border)
+        color wickColor = bull ? settings.bull_wick : settings.bear_wick
+        candle.body := box.new(bar_index, math.max(candle.o, candle.c), bar_index + 2, math.min(candle.o, candle.c), borderColor, 1, bgcolor = bodyColor)
+        candle.wick_up := line.new(bar_index + 1, candle.h, bar_index, math.max(candle.o, candle.c), color = wickColor)
+        candle.wick_down := line.new(bar_index + 1, math.min(candle.o, candle.c), bar_index, candle.l, color = wickColor)
+        candle.sweep_lines := array.new<line>()
+        candle.sweep_c1_indices := array.new<int>()
+        candle.sweep_is_bullish := array.new<bool>()
+        candle.sweep_c1_levels := array.new<float>()
+        candleSet.candles.unshift(candle)
+        candleSet.DetectCandleSetSweeps()
+        if candleSet.candles.size() > candleSet.settings.max_display
+            Candle delCandle = array.pop(candleSet.candles)
+            clearAllHTFCandleSweeps(delCandle)
+            box.delete(delCandle.body)
+            line.delete(delCandle.wick_up)
+            line.delete(delCandle.wick_down)
+    candleSet
+ 
+method Update(CandleSet candleSet, int offset) =>
+    if candleSet.candles.size() > 0
+        Candle candle = candleSet.candles.first()
+        bool isLiveCandle = candle.o_time == time(candleSet.settings.htf)
+        if isLiveCandle
+            candle.h := nz(candleSet.settings.own_h, math.max(candle.h, high))
+            candle.l := nz(candleSet.settings.own_l, math.min(candle.l, low))
+            candle.c := nz(candleSet.settings.own_c, close)
+            if high >= candle.h - syminfo.mintick / 2
+                candle.high_bar_idx := bar_index
+            if low <= candle.l + syminfo.mintick / 2
+                candle.low_bar_idx := bar_index
+            bull = candle.c > candle.o
+            if candleSet.div_settings.faster_detection
+                candleSet.PSPRefresh(candle)
+            bool pspOn = candleSet.PSPActive(candle)
+            color bodyColor = f_opaque(pspOn and psp_style == 'Body' ? (candle.is_bullish_div ? psp_bull_div_body : psp_bear_div_body) : (bull ? settings.bull_body : settings.bear_body))
+            color borderColor = pspOn and psp_style == 'Border' ? (candle.is_bullish_div ? psp_bull_div_body : psp_bear_div_body) : (bull ? settings.bull_border : settings.bear_border)
+            color wickColor = bull ? settings.bull_wick : settings.bear_wick
+            box.set_bgcolor(candle.body, bodyColor)
+            box.set_border_color(candle.body, borderColor)
+            line.set_color(candle.wick_up, wickColor)
+            line.set_color(candle.wick_down, wickColor)
+            box.set_top(candle.body, candle.o)
+            box.set_bottom(candle.body, candle.c)
+            line.set_y1(candle.wick_up, candle.h)
+            line.set_y2(candle.wick_up, math.max(candle.o, candle.c))
+            line.set_y1(candle.wick_down, candle.l)
+            line.set_y2(candle.wick_down, math.min(candle.o, candle.c))
+ 
+        // HTF sweeps: detect as the live candle develops, drop levels price has closed back through
+        candleSet.DetectCandleSetSweeps()
+        if settings.sweep_show and settings.sweep_invalidate
+            for candleIdx = 0 to candleSet.candles.size() - 1 by 1
+                Candle sweepCandle = candleSet.candles.get(candleIdx)
+                if not na(sweepCandle.sweep_lines) and sweepCandle.sweep_lines.size() > 0
+                    for sweepIdx = sweepCandle.sweep_lines.size() - 1 to 0 by 1
+                        bool isBullish = sweepCandle.sweep_is_bullish.get(sweepIdx)
+                        float sweepLevel = sweepCandle.sweep_c1_levels.get(sweepIdx)
+                        bool invalidated = isBullish ? (close < sweepLevel) : (close > sweepLevel)
+                        if invalidated
+                            line sweepLine = sweepCandle.sweep_lines.get(sweepIdx)
+                            if not na(sweepLine)
+                                line.delete(sweepLine)
+                            sweepCandle.sweep_lines.remove(sweepIdx)
+                            sweepCandle.sweep_c1_indices.remove(sweepIdx)
+                            sweepCandle.sweep_is_bullish.remove(sweepIdx)
+                            sweepCandle.sweep_c1_levels.remove(sweepIdx)
+    candleSet
+ 
+// Phase 1: update data only
+f_panelRun(CandleSet s, int offset) =>
+    s.UpdateTime(offset)
+    s.Monitor().Update(offset)
+    true
+ 
+// Phase 2: position the panel
+f_panelPlace(CandleSet s, int offset) =>
+    if barstate.isrealtime or barstate.islast
+        if s.candles.size() > 0
+            s.Reorder(offset)
+    true
+ 
+// Sort key = timeframe length in seconds (slot index only breaks ties); na = panel not shown
+f_panelKey(CandleSet s, int slot) =>
+    s.settings.show and ValidTimeframe(s.settings.htf) ? timeframe.in_seconds(s.settings.htf) + slot * 0.001 : na
+ 
+f_panelWidth(CandleSet s) =>
+    int n = s.candles.size()
+    n > 0 ? n * settings.width + (n - 1) * settings.buffer : 0
+ 
+// Offset of panel `i` = padding + width of every shown panel with a shorter timeframe
+f_panelOffset(int i, array<float> keys, array<int> ws) =>
+    int off = settings.offset
+    float mk = keys.get(i)
+    for j = 0 to 5
+        float kj = keys.get(j)
+        if not na(kj) and kj < mk
+            off += ws.get(j) + settings.htf_buffer
+    off
+ 
+// ═════════════ HTF DATA ═════════════
+// Accumulates one HTF candle (open / close / high / low) from chart-timeframe values.
+f_htfOHLC(string tf, float o_, float c_, float h_, float l_) =>
+    var float ro = na
+    var float rc = na
+    var float rh = na
+    var float rl = na
+    var int   rt = na
+    int t = time(tf)
+    if not na(t)
+        if na(rt) or t != rt
+            ro := o_
+            rh := h_
+            rl := l_
+            rt := t
+        else
+            if na(ro)
+                ro := o_
+            if not na(h_)
+                rh := na(rh) ? h_ : math.max(rh, h_)
+            if not na(l_)
+                rl := na(rl) ? l_ : math.min(rl, l_)
+        if not na(c_)
+            rc := c_
+    [ro, rc, rh, rl, na(ro) ? int(na) : rt]
+ 
+f_loadHtfData(CandleSet s, string tf) =>
+    [oO, oC, oH, oL, oT] = f_htfOHLC(tf, open, close, high, low)
+    s.settings.own_o := oO
+    s.settings.own_c := oC
+    s.settings.own_h := oH
+    s.settings.own_l := oL
+    true
+ 
+htf1.settings.htf := f_tfMap(htfTf1)
+htf2.settings.htf := f_tfMap(htfTf2)
+htf3.settings.htf := f_tfMap(htfTf3)
+htf4.settings.htf := f_tfMap(htfTf4)
+htf5.settings.htf := f_tfMap(htfTf5)
+htf6.settings.htf := f_tfMap(htfTf6)
+htf1.settings.max_display := cnt1
+htf2.settings.max_display := cnt2
+htf3.settings.max_display := cnt3
+htf4.settings.max_display := cnt4
+htf5.settings.max_display := cnt5
+htf6.settings.max_display := cnt6
+ 
+// HTF4-6 data (built from chart bars)
+f_loadHtfData(htf4, htf4.settings.htf)
+f_loadHtfData(htf5, htf5.settings.htf)
+f_loadHtfData(htf6, htf6.settings.htf)
+ 
+// HTF1-3 data (request.security)
+string effectiveHtf1 = timeframe.in_seconds(htf1.settings.htf) > timeframe.in_seconds() ? htf1.settings.htf : timeframe.period
+[own_o_1, own_h_1, own_l_1, own_c_1] = request.security(syminfo.tickerid, effectiveHtf1, [open, high, low, close], lookahead = barmerge.lookahead_on)
+htf1.settings.own_o := own_o_1
+htf1.settings.own_h := own_h_1
+htf1.settings.own_l := own_l_1
+htf1.settings.own_c := own_c_1
+ 
+string effectiveHtf2 = timeframe.in_seconds(htf2.settings.htf) > timeframe.in_seconds() ? htf2.settings.htf : timeframe.period
+[own_o_2, own_h_2, own_l_2, own_c_2] = request.security(syminfo.tickerid, effectiveHtf2, [open, high, low, close], lookahead = barmerge.lookahead_on)
+htf2.settings.own_o := own_o_2
+htf2.settings.own_h := own_h_2
+htf2.settings.own_l := own_l_2
+htf2.settings.own_c := own_c_2
+ 
+string effectiveHtf3 = timeframe.in_seconds(htf3.settings.htf) > timeframe.in_seconds() ? htf3.settings.htf : timeframe.period
+[own_o_3, own_h_3, own_l_3, own_c_3] = request.security(syminfo.tickerid, effectiveHtf3, [open, high, low, close], lookahead = barmerge.lookahead_on)
+htf3.settings.own_o := own_o_3
+htf3.settings.own_h := own_h_3
+htf3.settings.own_l := own_l_3
+htf3.settings.own_c := own_c_3
+ 
+// ═════════════ PSP ASSET SETUP (first bar only) ═════════════
+if barstate.isfirst
+    AssetConfig autoConfig = f_resolveChart()
+    string chartTid = syminfo.tickerid
+    for s in allSets
+        s.InitAssets()
+        s.ApplyAutoAssets(autoConfig).SetAssetIncludes()
+        if s.div_settings.preset == 'Manual' and manualAssetsValid
+            s.asset1.invert := false
+            s.asset2.invert := resolvedInvertSecondary
+            s.asset3.invert := s.div_settings.invert_asset3
+            s.asset1.symbol := chartTid
+            s.asset2.symbol := s.div_settings.manual_asset2
+            s.asset3.symbol := s.div_settings.manual_asset3
+            s.asset1.include := true
+            s.asset2.include := str.length(s.div_settings.manual_asset2) > 0
+            s.asset3.include := str.length(s.div_settings.manual_asset3) > 0
+ 
+// ═════════════ PANEL LAYOUT (sorted by timeframe, shortest on the left) ═════════════
+float pk1 = f_panelKey(htf1, 0)
+float pk2 = f_panelKey(htf2, 1)
+float pk3 = f_panelKey(htf3, 2)
+float pk4 = f_panelKey(htf4, 3)
+float pk5 = f_panelKey(htf5, 4)
+float pk6 = f_panelKey(htf6, 5)
+ 
+// phase 1: update every shown panel's data
+if not na(pk1)
+    f_panelRun(htf1, 0)
+if not na(pk2)
+    f_panelRun(htf2, 0)
+if not na(pk3)
+    f_panelRun(htf3, 0)
+if not na(pk4)
+    f_panelRun(htf4, 0)
+if not na(pk5)
+    f_panelRun(htf5, 0)
+if not na(pk6)
+    f_panelRun(htf6, 0)
+ 
+array<float> pKeys = array.from(pk1, pk2, pk3, pk4, pk5, pk6)
+array<int>   pW    = array.from(f_panelWidth(htf1), f_panelWidth(htf2), f_panelWidth(htf3), f_panelWidth(htf4), f_panelWidth(htf5), f_panelWidth(htf6))
+ 
+// phase 2: place each panel at its sorted offset
+if not na(pk1)
+    f_panelPlace(htf1, f_panelOffset(0, pKeys, pW))
+if not na(pk2)
+    f_panelPlace(htf2, f_panelOffset(1, pKeys, pW))
+if not na(pk3)
+    f_panelPlace(htf3, f_panelOffset(2, pKeys, pW))
+if not na(pk4)
+    f_panelPlace(htf4, f_panelOffset(3, pKeys, pW))
+if not na(pk5)
+    f_panelPlace(htf5, f_panelOffset(4, pKeys, pW))
+if not na(pk6)
+    f_panelPlace(htf6, f_panelOffset(5, pKeys, pW))
+ 
+// Invisible plots keep the HTF candles inside the price-scale auto-fit
+var float allHigh = na
+var float allLow = na
+allHigh := na
+allLow := na
+for s in allSets
+    if s.candles.size() > 0
+        for i = 0 to s.candles.size() - 1
+            Candle cx = s.candles.get(i)
+            allHigh := na(allHigh) ? cx.h : math.max(allHigh, cx.h)
+            allLow := na(allLow) ? cx.l : math.min(allLow, cx.l)
+ 
+plot(allHigh, title = '(internal) HTF scale anchor high', color = color.new(color.white, 100), display = display.pane)
+plot(allLow, title = '(internal) HTF scale anchor low', color = color.new(color.white, 100), display = display.pane)
+ 
