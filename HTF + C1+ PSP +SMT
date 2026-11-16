@@ -1,0 +1,2222 @@
+//@version=6
+indicator("Bandz SMT + HTF Panels", shorttitle="Bandz SMT Panels", overlay=true, max_bars_back=5000, max_lines_count=500, max_labels_count=500, max_boxes_count=500, calc_bars_count=3000, dynamic_requests=true)
+ 
+// v7.0 = Bandz Multi-Timeframe SMT (chart) + HTF Panel Candles / PSP / Sweeps (panel) in one indicator.
+// "Show SMT" lets you draw SMT on the chart, inside the HTF panels, or both. PSP + panel SMT use Assets 1-4.
+ 
+max_bars_back(time, 5000)
+ 
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// INPUTS
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Converts a friendly label ("90m", "6H", "7H", "1D", "1W") into a Pine timeframe string.
+f_labelToTf(string s) =>
+    string out = s
+    if str.endswith(s, "m")
+        out := str.replace(s, "m", "")
+    else if str.endswith(s, "H")
+        out := str.tostring(int(str.tonumber(str.replace(s, "H", "")) * 60))
+    out
+ 
+// ── SMT Display ──────────────────────────────────────────────────────
+groupDisplay = "SMT Display"
+smtDisplayMode = input.string("On Panel SMT", "Show SMT", options=["On Chart SMT", "On Panel SMT", "Chart + Panel SMT"], group=groupDisplay, tooltip="On Chart SMT = SMT lines on the price chart. On Panel SMT = SMT lines inside the HTF panel candles. Chart + Panel SMT = both.")
+panelSmtColor = input.color(#dbdbdb, "Panel SMT Line Colour", group=groupDisplay)
+showChartSmt = smtDisplayMode != "On Panel SMT"
+showPanelSmt = smtDisplayMode != "On Chart SMT"
+ 
+// ── Assets ───────────────────────────────────────────────────────────
+groupAssets = "Assets (compared against the chart symbol)"
+useComparison1In    = input.bool(true,  "Asset 1", inline="a1", group=groupAssets)
+comparisonSymbol1 = input.symbol("", "", inline="a1", group=groupAssets)
+useComparison1 = useComparison1In and str.length(comparisonSymbol1) > 0
+useComparison2In    = input.bool(false, "Asset 2", inline="a2", group=groupAssets)
+comparisonSymbol2 = input.symbol("", "", inline="a2", group=groupAssets)
+useComparison2 = useComparison2In and str.length(comparisonSymbol2) > 0
+useComparison3In    = input.bool(false, "Asset 3", inline="a3", group=groupAssets)
+comparisonSymbol3 = input.symbol("", "", inline="a3", group=groupAssets)
+useComparison3 = useComparison3In and str.length(comparisonSymbol3) > 0
+useComparison4In    = input.bool(false, "Asset 4", inline="a4", group=groupAssets)
+comparisonSymbol4 = input.symbol("", "", inline="a4", group=groupAssets)
+useComparison4 = useComparison4In and str.length(comparisonSymbol4) > 0
+comparisonTriggerMode = input.string("Either enabled comparison", "Trigger Mode", options=["Either enabled comparison", "All enabled comparisons"], group=groupAssets, tooltip="Either = SMT prints if the chart diverges from any enabled asset. All = only if it diverges from every enabled asset.")
+futuresDataMode = input.string("Force B-ADJ ON", "Futures Data", options=["Force B-ADJ ON", "Force B-ADJ OFF", "Inherit chart settings", "Raw symbol"], group=groupAssets)
+ 
+// ── Timeframes (toggle · timeframe · colour) ─────────────────────────
+groupTF = "Timeframes"
+tfW_on   = input.bool(false,  "W",   inline="tfW",  group=groupTF)
+tfW      = input.timeframe("1W",   "",    inline="tfW",  group=groupTF)
+colW     = input.color(#dbdbdb, "",   inline="tfW",  group=groupTF)
+tfD_on   = input.bool(false,  "D",   inline="tfD",  group=groupTF)
+tfD      = input.timeframe("1D",   "",    inline="tfD",  group=groupTF)
+colD     = input.color(#dbdbdb, "",   inline="tfD",  group=groupTF)
+tf7H_on  = input.bool(true,  "7H",  inline="tf7H", group=groupTF)
+tf7HLabel = input.string("7H", "", options=["1m","2m","3m","5m","10m","15m","30m","45m","60m","90m","2H","3H","4H","5H","6H","7H","8H","12H","1D","1W"], inline="tf7H", group=groupTF)
+tf7H     = f_labelToTf(tf7HLabel)
+col7H    = input.color(#dbdbdb, "",   inline="tf7H", group=groupTF)
+tf6H_on  = input.bool(true,  "6H",  inline="tf6H", group=groupTF)
+tf6HLabel = input.string("6H", "", options=["1m","2m","3m","5m","10m","15m","30m","45m","60m","90m","2H","3H","4H","5H","6H","7H","8H","12H","1D","1W"], inline="tf6H", group=groupTF)
+tf6H     = f_labelToTf(tf6HLabel)
+col6H    = input.color(#dbdbdb, "",   inline="tf6H", group=groupTF)
+tf4H_on  = input.bool(true,  "4H",  inline="tf4H", group=groupTF)
+tf4H     = input.timeframe("240",  "",    inline="tf4H", group=groupTF)
+col4H    = input.color(#dbdbdb, "",   inline="tf4H", group=groupTF)
+tf90_on  = input.bool(true,  "90m", inline="tf90", group=groupTF)
+tf90Label = input.string("90m", "", options=["1m","2m","3m","5m","10m","15m","30m","45m","60m","90m","2H","3H","4H","5H","6H","7H","8H","12H","1D","1W"], inline="tf90", group=groupTF)
+tf90     = f_labelToTf(tf90Label)
+col90    = input.color(#dbdbdb, "",   inline="tf90", group=groupTF)
+tf1H_on  = input.bool(true,  "1H",  inline="tf1H", group=groupTF)
+tf1H     = input.timeframe("60",   "",    inline="tf1H", group=groupTF)
+col1H    = input.color(#dbdbdb, "",   inline="tf1H", group=groupTF)
+tf30_on  = input.bool(true,  "30m", inline="tf30", group=groupTF)
+tf30     = input.timeframe("30",   "",    inline="tf30", group=groupTF)
+col30    = input.color(#dbdbdb, "",   inline="tf30", group=groupTF)
+tf15_on  = input.bool(false,  "15m", inline="tf15", group=groupTF)
+tf15     = input.timeframe("15",   "",    inline="tf15", group=groupTF)
+col15    = input.color(#dbdbdb, "",   inline="tf15", group=groupTF)
+tf5_on   = input.bool(false, "5m",  inline="tf5",  group=groupTF)
+tf5      = input.timeframe("5",    "",    inline="tf5",  group=groupTF)
+col5     = input.color(#dbdbdb, "",   inline="tf5",  group=groupTF)
+tf1_on   = input.bool(false, "1m",  inline="tf1",  group=groupTF)
+tf1      = input.timeframe("1",    "",    inline="tf1",  group=groupTF)
+col1     = input.color(#dbdbdb, "",   inline="tf1",  group=groupTF)
+ 
+// ── Lookbacks ────────────────────────────────────────────────────────
+groupLookback = "Lookbacks (candles)"
+lookbackW         = input.int(14, "W",   minval=1, maxval=100, group=groupLookback)
+lookbackD         = input.int(10, "D",   minval=1, maxval=100, group=groupLookback)
+lookback7H        = input.int(10, "7H",  minval=1, maxval=100, group=groupLookback)
+lookback6H        = input.int(10, "6H",  minval=1, maxval=100, group=groupLookback)
+lookback4H        = input.int(14, "4H",  minval=1, maxval=100, group=groupLookback)
+lookback90        = input.int(6,  "90m", minval=1, maxval=100, group=groupLookback)
+lookback1H        = input.int(6,  "1H",  minval=1, maxval=100, group=groupLookback)
+lookback30        = input.int(4,  "30m", minval=1, maxval=100, group=groupLookback)
+lookback15        = input.int(4,  "15m", minval=1, maxval=100, group=groupLookback)
+lookback5         = input.int(4,  "5m",  minval=1, maxval=100, group=groupLookback)
+lookback1         = input.int(6,  "1m",  minval=1, maxval=100, group=groupLookback)
+ 
+// ── Logic ────────────────────────────────────────────────────────────
+groupLogic = "SMT Logic"
+showBearish       = input.bool(true, "Bearish SMT / High Sweep", inline="dir", group=groupLogic)
+showBullish       = input.bool(true, "Bullish SMT / Low Sweep", inline="dir", group=groupLogic)
+maxPerDirection   = input.int(2, "Max SMTs Per Direction Per TF", minval=1, maxval=10, group=groupLogic)
+maxKeepPerTfDir   = input.int(2, "Keep Per Direction Per TF", minval=0, maxval=8, group=groupLogic, tooltip="How many stored SMTs to keep per timeframe and direction.")
+protect90        = input.bool(true, "Always Show 90m SMTs", group=groupLogic, tooltip="ON = a 90m SMT is never hidden because a 4H/6H/7H SMT shares the same high/low.")
+repairLtfPrev     = input.bool(true, "Native Prev-Candle Repair On 1H And Below", group=groupLogic, tooltip="Uses extra request.security calls per asset. Turn OFF if you enable all 4 assets and hit TradingView's 40-request limit.")
+ 
+// ── Style ────────────────────────────────────────────────────────────
+groupStyle = "Style"
+smtOpacity     = input.int(100, "SMT Line Opacity %", minval=0, maxval=100, group=groupStyle, tooltip="100 = fully visible.")
+lineStyleInput = input.string("Solid", "Line Style", options=["Solid", "Dashed", "Dotted"], group=groupStyle)
+lineWidth      = input.int(1, "Line Width", minval=1, maxval=5, group=groupStyle)
+labelTextColor = input.color(#4a4a4a, "Label Text", group=groupStyle)
+labelSizeInput = input.string("Small", "Label Size", options=["Tiny", "Small", "Normal", "Large", "Huge"], group=groupStyle)
+ 
+// ═════════════ HTF PANELS ═════════════
+string gPanel = "HTF Panels"
+bool   htf_auto_count = input.bool(true, 'Auto Count', group = gPanel, tooltip = 'ON: every HTF panel follows its own timeframe automatically - 4H and above (4H, 6H, 7H, 1D, 1W) = 3 candles, everything below 4H = 5 candles. Turn OFF to use the manual counts.')
+bool   htfOn1 = input.bool(true, 'HTF1', inline = 'hs1', group = gPanel)
+string htfTf1 = input.string('1H', '', options = ['15m','30m','1H','90m','4H','6H','7H','1D','1W'], inline = 'hs1', group = gPanel)
+int    htfCnt1 = input.int(5, '', minval = 1, maxval = 60, inline = 'hs1', group = gPanel, active = not htf_auto_count)
+bool   htfOn2 = input.bool(true, 'HTF2', inline = 'hs2', group = gPanel)
+string htfTf2 = input.string('90m', '', options = ['15m','30m','1H','90m','4H','6H','7H','1D','1W'], inline = 'hs2', group = gPanel)
+int    htfCnt2 = input.int(3, '', minval = 1, maxval = 60, inline = 'hs2', group = gPanel, active = not htf_auto_count)
+bool   htfOn3 = input.bool(true, 'HTF3', inline = 'hs3', group = gPanel)
+string htfTf3 = input.string('4H', '', options = ['15m','30m','1H','90m','4H','6H','7H','1D','1W'], inline = 'hs3', group = gPanel)
+int    htfCnt3 = input.int(3, '', minval = 1, maxval = 60, inline = 'hs3', group = gPanel, active = not htf_auto_count)
+bool   htfOn4 = input.bool(false, 'HTF4', inline = 'hs4', group = gPanel)
+string htfTf4 = input.string('30m', '', options = ['15m','30m','1H','90m','4H','6H','7H','1D','1W'], inline = 'hs4', group = gPanel)
+int    htfCnt4 = input.int(5, '', minval = 1, maxval = 60, inline = 'hs4', group = gPanel, active = not htf_auto_count)
+bool   htfOn5 = input.bool(false, 'HTF5', inline = 'hs5', group = gPanel)
+string htfTf5 = input.string('6H', '', options = ['15m','30m','1H','90m','4H','6H','7H','1D','1W'], inline = 'hs5', group = gPanel)
+int    htfCnt5 = input.int(3, '', minval = 1, maxval = 60, inline = 'hs5', group = gPanel, active = not htf_auto_count)
+bool   htfOn6 = input.bool(false, 'HTF6', inline = 'hs6', group = gPanel)
+string htfTf6 = input.string('1D', '', options = ['15m','30m','1H','90m','4H','6H','7H','1D','1W'], inline = 'hs6', group = gPanel)
+int    htfCnt6 = input.int(3, '', minval = 1, maxval = 60, inline = 'hs6', group = gPanel, active = not htf_auto_count)
+int in_offset    = input.int(25, 'Padding from chart', minval = 1, group = gPanel)
+int in_width     = input.int(2, 'Candle width', minval = 1, maxval = 4, group = gPanel)
+int in_buffer    = input.int(1, 'Space between candles', minval = 1, maxval = 4, group = gPanel)
+int in_htfBuffer = input.int(10, 'Space between HTFs', minval = 2, maxval = 30, group = gPanel)
+ 
+// ═════════════ PANEL CANDLE STYLE ═════════════
+string gCandle = "Panel Candle Style"
+color  in_bullBody   = input.color(#f7f7f7, 'Body', inline = 'cs1', group = gCandle)
+color  in_bearBody   = input.color(#616161, '', inline = 'cs1', group = gCandle)
+color  in_bullBorder = input.color(#9c9c9c, 'Border', inline = 'cs2', group = gCandle)
+color  in_bearBorder = input.color(#4a4a4a, '', inline = 'cs2', group = gCandle)
+color  in_bullWick   = input.color(#9c9c9c, 'Wick', inline = 'cs3', group = gCandle)
+color  in_bearWick   = input.color(#9c9c9c, '', inline = 'cs3', group = gCandle)
+bool   in_htfLblOn   = input.bool(true, 'HTF Label', inline = 'cs5', group = gCandle)
+color  in_lblColor   = input.color(#2e2e2e, '', inline = 'cs5', group = gCandle)
+string in_lblSize    = input.string(size.small, '', [size.tiny, size.small, size.normal, size.large, size.huge], inline = 'cs5', group = gCandle)
+bool   in_tmrOn      = input.bool(true, 'Remaining Time', inline = 'cs6', group = gCandle)
+color  in_tmrColor   = input.color(#9c9c9c, '', inline = 'cs6', group = gCandle)
+string in_tmrSize    = input.string(size.tiny, '', [size.tiny, size.small, size.normal, size.large, size.huge], inline = 'cs6', group = gCandle)
+string in_lblPos     = input.string('Both', 'Label Position', options = ['Top', 'Bottom', 'Both'], group = gCandle)
+string in_lblAlign   = input.string('Align', 'Label Alignment', options = ['Follow Candles', 'Align'], group = gCandle)
+ 
+// ═════════════ C1 / C2 / C3 LABELS ═════════════
+string gC123 = "C1-C2-C3 Labels"
+bool   in_c123On    = input.bool(true, 'C1-C3 HTF Labels', group = gC123, tooltip = 'Labels the newest sweep formation in each panel: C1 = swept candle, C2 = sweeping candle, C3 = continuation candle. Needs HTF Sweeps ON.')
+color  in_c123Color = input.color(#2e2e2e, 'Label Color', group = gC123)
+string in_c123Size  = input.string(size.tiny, 'Label Size', options = [size.tiny, size.small, size.normal, size.large, size.huge], group = gC123)
+ 
+// ═════════════ PSP DIVERGENCE (uses Assets 1-4 above) ═════════════
+string gPsp = "PSP Divergence"
+bool   psp_on               = input.bool(true, 'Enable PSP', group = gPsp, tooltip = 'Colours the HTF candle when the chart asset and the enabled Assets close in opposite directions.')
+string psp_mode             = input.string('PC', 'Mode', options = ['PC', 'PSP'], group = gPsp, tooltip = 'PC = colour every HTF candle that diverges from the Assets. PSP = colour only divergent candles that are also pivots.')
+bool   psp_precise_mode     = input.bool(false, 'Precise Mode', group = gPsp, tooltip = 'Only highlight pivots on the chart asset (not the Assets).')
+color  psp_bull_div_body    = input.color(color.new(#00adef, 30), 'PSP Colour', inline = 'pspc', group = gPsp)
+color  psp_bear_div_body    = input.color(color.new(#db5755, 30), '', inline = 'pspc', group = gPsp)
+string psp_style            = input.string('None', 'PSP Highlight', options = ['None', 'Body', 'Border'], group = gPsp, tooltip = 'How a PSP / divergence candle is shown. None leaves every candle exactly as normal; Body recolours the candle body; Border recolours only the candle border.')
+ 
+// ═════════════ HTF SWEEPS ═════════════
+string gSweep = "HTF Sweeps"
+bool   in_sweepOn    = input.bool(true, 'HTF Sweeps', inline = 'sw', group = gSweep)
+color  in_sweepColor = input.color(color.new(#4a4a4a, 0), '', inline = 'sw', group = gSweep)
+string in_sweepStyle = input.string('⎯⎯⎯', '', options = ['⎯⎯⎯', '----', '····'], inline = 'sw', group = gSweep)
+bool   in_sweepInval = input.bool(true, 'Remove sweep when price closes back through it', group = gSweep)
+ 
+enableAlerts = input.bool(false, "Enable Alert Conditions", group="Alerts")
+ 
+// ── Fixed internal settings (Clean mode) ─────────────────────────────
+smtFilteringMode      = "Clean"
+useTfColors           = true
+usePerTfLookbacks     = true
+lookbackCandles       = 25
+dedupeTicks           = 2
+requireCloseBack      = false
+persistAfterClose     = true
+deleteBroken          = true
+cleanupInvalidLive    = true
+enablePerTfRetention  = true
+balancedSupersession  = false
+balancedKeepMacro     = false
+balancedMacroSpanMultiple = 2.5
+enableLtfCaps         = true
+maxM1PerDirection     = 2
+maxM5PerDirection     = 2
+maxFastLtfTotal       = 6
+maxLtf15Total         = 8
+maxKeepFastPerTfDir   = maxKeepPerTfDir
+maxKeepMidPerTfDir    = maxKeepPerTfDir
+maxKeepHourPerTfDir   = maxKeepPerTfDir
+maxKeepHtfPerTfDir    = maxKeepPerTfDir
+maxKeepDWPerTfDir     = maxKeepPerTfDir
+enableFractalCleanup  = true
+keepChildIfNewer      = true
+keepChildIfExtreme    = true
+requireBothChildRules = true
+childExtremeTicks     = 0
+bearColor             = #dbdbdb
+bullColor             = #dbdbdb
+labelBgColor          = color.new(color.rgb(54, 58, 69), 100)
+verboseLabels         = false
+lineXMode             = "Auto Render Fix"
+maxIndexBack          = 4500
+maxDrawings           = 300
+sizeFastTF            = labelSizeInput
+sizeMidTF             = labelSizeInput
+sizeNormalTF          = labelSizeInput
+sizeHTFTF             = labelSizeInput
+showSkippedLowerTF    = false
+ 
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// HELPERS
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+f_lineStyle(string s) =>
+    switch s
+        "Dashed" => line.style_dashed
+        "Dotted" => line.style_dotted
+        => line.style_solid
+ 
+f_labelSize(string s) =>
+    switch s
+        "Tiny"   => size.tiny
+        "Small"  => size.small
+        "Normal" => size.normal
+        "Large"  => size.large
+        "Huge"   => size.huge
+        => size.tiny
+ 
+f_tfSizeString(string tf) =>
+    int sec = timeframe.in_seconds(tf)
+    string out = sizeHTFTF
+    if sec <= 5 * 60
+        out := sizeFastTF
+    else if sec <= 15 * 60
+        out := sizeMidTF
+    else if sec <= 60 * 60
+        out := sizeNormalTF
+    else
+        out := sizeHTFTF
+    out
+ 
+f_shortSymbol(string s) =>
+    string out = s
+    string[] parts = str.split(s, ":")
+    if array.size(parts) > 1
+        out := array.get(parts, array.size(parts) - 1)
+    out := str.replace_all(out, "1!", "")
+    out := str.replace_all(out, "2!", "")
+    out
+ 
+f_logoSymbol(string s) =>
+    string out = str.upper(f_shortSymbol(s))
+    if out == "MES"
+        out := "ES"
+    else if out == "MNQ"
+        out := "NQ"
+    else if out == "MYM"
+        out := "YM"
+    else if out == "M2K"
+        out := "RTY"
+    else if out == "MGC"
+        out := "GC"
+    else if out == "MSI"
+        out := "SI"
+    else if out == "MCL"
+        out := "CL"
+    out
+ 
+f_tfLogo(string tf) =>
+    int sec = timeframe.in_seconds(tf)
+    string out = tf
+    if sec < 3600
+        out := str.tostring(int(sec / 60)) + "m"
+    else if sec < 86400
+        out := sec % 3600 == 0 ? str.tostring(int(sec / 3600)) + "H" : str.tostring(int(sec / 60)) + "m"
+    else if sec == 86400
+        out := "1D"
+    else if sec == 604800
+        out := "1W"
+    out
+ 
+f_labelLogo(string tf, string suffix) =>
+    f_tfLogo(tf) + "\n" + suffix
+ 
+// Joins the short names of every flagged comparison symbol, e.g. "es+ym".
+f_compSuffix(bool[] flags) =>
+    string[] names = array.from(f_logoSymbol(comparisonSymbol1), f_logoSymbol(comparisonSymbol2), f_logoSymbol(comparisonSymbol3), f_logoSymbol(comparisonSymbol4))
+    string out = ""
+    for k = 0 to 3
+        if array.get(flags, k)
+            string nm = array.get(names, k)
+            out := str.length(out) > 0 ? out + "," + nm : nm
+    out
+ 
+f_enabledCompSuffix() =>
+    f_compSuffix(array.from(useComparison1, useComparison2, useComparison3, useComparison4))
+ 
+f_isAllowedTF(string tf) =>
+    timeframe.in_seconds(tf) >= timeframe.in_seconds(timeframe.period)
+ 
+f_levelAlreadyUsed(float[] levels, float level, float tolerance) =>
+    bool used = false
+    if array.size(levels) > 0 and tolerance > 0
+        for i = 0 to array.size(levels) - 1
+            if math.abs(array.get(levels, i) - level) <= tolerance
+                used := true
+                break
+    used
+ 
+f_endpointAlreadyUsed(int[] xs, float[] ys, int x, float y, float tolerance) =>
+    bool used = false
+    int n = math.min(array.size(xs), array.size(ys))
+    if n > 0
+        for i = 0 to n - 1
+            bool sameX = array.get(xs, i) == x
+            bool sameY = math.abs(array.get(ys, i) - y) <= tolerance
+            if sameX and sameY
+                used := true
+                break
+    used
+ 
+f_useIndexX(int x1Idx) =>
+    // Index-anchored drawings internally require `time[distance]`.
+    // Never allow that distance to approach/exceed the 5,000-bar buffer.
+    int dist = not na(x1Idx) ? bar_index - x1Idx : na
+    int safeIndexLimit = math.min(maxIndexBack, 4900)
+    bool safe = not na(dist) and dist >= 0 and dist <= safeIndexLimit
+    bool useIt = false
+    if lineXMode == "Bar Index"
+        useIt := safe
+    else if lineXMode == "Auto Render Fix"
+        useIt := safe
+    else
+        useIt := false
+    useIt
+ 
+f_getComparisonTicker(string sym) =>
+    string inherited = str.length(sym) > 0 ? ticker.inherit(syminfo.tickerid, sym) : sym
+    string out = sym
+    if str.length(sym) == 0
+        out := sym
+    else if futuresDataMode == "Force B-ADJ ON"
+        out := ticker.modify(inherited, backadjustment=backadjustment.on)
+    else if futuresDataMode == "Force B-ADJ OFF"
+        out := ticker.modify(inherited, backadjustment=backadjustment.off)
+    else if futuresDataMode == "Inherit chart settings"
+        out := inherited
+    else
+        out := sym
+    out
+ 
+// Balanced reference eligibility works fractally on every timeframe.
+f_localSwingHigh(int refIdx, float refH, float[] highs, float tolerance) =>
+    int n = array.size(highs)
+    bool swing = false
+    if refIdx == 0
+        swing := true
+    else if refIdx < n
+        float newerH = array.get(highs, refIdx - 1)
+        bool newerSide = na(newerH) or refH >= newerH - tolerance
+        bool olderSide = true
+        if refIdx + 1 < n
+            float olderH = array.get(highs, refIdx + 1)
+            olderSide := na(olderH) or refH >= olderH - tolerance
+        swing := newerSide and olderSide
+    swing
+ 
+f_localSwingLow(int refIdx, float refL, float[] lows, float tolerance) =>
+    int n = array.size(lows)
+    bool swing = false
+    if refIdx == 0
+        swing := true
+    else if refIdx < n
+        float newerL = array.get(lows, refIdx - 1)
+        bool newerSide = na(newerL) or refL <= newerL + tolerance
+        bool olderSide = true
+        if refIdx + 1 < n
+            float olderL = array.get(lows, refIdx + 1)
+            olderSide := na(olderL) or refL <= olderL + tolerance
+        swing := newerSide and olderSide
+    swing
+ 
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// DRAWING STATE
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+type SMTDraw
+    string key
+    string tf
+    int    tfSec
+    int    dir
+    int    refStart
+    int    curStart
+    int    lastSeenBar
+    float  anchor
+    int    x1Time
+    int    x2Time
+    int    x1Idx
+    int    x2Idx
+    float  y1
+    float  y2
+    bool   useIndexX
+    line   ln
+    label  lb
+ 
+var SMTDraw[] smtEvents = array.new<SMTDraw>(0)
+ 
+f_findEvent(string key) =>
+    int idx = -1
+    if array.size(smtEvents) > 0
+        for i = 0 to array.size(smtEvents) - 1
+            SMTDraw ev = array.get(smtEvents, i)
+            if ev.key == key
+                idx := i
+                break
+    idx
+ 
+f_deleteEventAt(int idx) =>
+    if idx >= 0 and idx < array.size(smtEvents)
+        SMTDraw ev = array.get(smtEvents, idx)
+        if not na(ev.ln)
+            line.delete(ev.ln)
+        if not na(ev.lb)
+            label.delete(ev.lb)
+        array.remove(smtEvents, idx)
+ 
+f_deleteEventByKey(string key) =>
+    int idx = f_findEvent(key)
+    if idx != -1
+        f_deleteEventAt(idx)
+ 
+f_deleteEventsByTFStart(string tf, int curStart) =>
+    if array.size(smtEvents) > 0
+        for i = array.size(smtEvents) - 1 to 0
+            SMTDraw ev = array.get(smtEvents, i)
+            if ev.tf == tf and ev.curStart == curStart
+                f_deleteEventAt(i)
+ 
+f_deleteAllEventsByTF(string tf) =>
+    if array.size(smtEvents) > 0
+        for i = array.size(smtEvents) - 1 to 0
+            SMTDraw ev = array.get(smtEvents, i)
+            if ev.tf == tf
+                f_deleteEventAt(i)
+ 
+f_deleteSameEndpointEvents(string tf, int curStart, int dir, int x2Time, float y2, float tolerance, string keepKey) =>
+    if array.size(smtEvents) > 0
+        for i = array.size(smtEvents) - 1 to 0
+            SMTDraw ev = array.get(smtEvents, i)
+            if ev.tf == tf and ev.curStart == curStart and ev.dir == dir and ev.key != keepKey
+                bool sameEndpoint = ev.x2Time == x2Time and math.abs(ev.y2 - y2) <= tolerance
+                if sameEndpoint
+                    f_deleteEventAt(i)
+ 
+f_deleteSameReferenceEvents(string tf, int dir, int x1Time, float y1, float tolerance, string keepKey) =>
+    // Daily and Weekly SMTs are "must-show" HTF events.
+    bool protectDailyWeekly = timeframe.in_seconds(tf) >= 24 * 60 * 60
+    if not protectDailyWeekly and array.size(smtEvents) > 0
+        for i = array.size(smtEvents) - 1 to 0
+            SMTDraw ev = array.get(smtEvents, i)
+            if ev.tf == tf and ev.dir == dir and ev.key != keepKey
+                bool sameReference = ev.x1Time == x1Time and math.abs(ev.y1 - y1) <= tolerance
+                if sameReference
+                    f_deleteEventAt(i)
+ 
+f_childMoreExtreme(int dir, float childY2, float parentY2) =>
+    float buf = childExtremeTicks * syminfo.mintick
+    bool more = false
+    if dir == -1
+        more := childY2 > parentY2 + buf
+    else
+        more := childY2 < parentY2 - buf
+    more
+ 
+f_childUsefulAgainstParent(int dir, int childX2Time, float childY2, int parentX2Time, float parentY2) =>
+    bool rawNewer = childX2Time > parentX2Time
+    bool rawExtreme = f_childMoreExtreme(dir, childY2, parentY2)
+    bool newerPass = not keepChildIfNewer or rawNewer
+    bool extremePass = not keepChildIfExtreme or rawExtreme
+    bool anyRuleEnabled = keepChildIfNewer or keepChildIfExtreme
+    bool eitherPass = (keepChildIfNewer and rawNewer) or (keepChildIfExtreme and rawExtreme)
+    bool bothPass = newerPass and extremePass
+    anyRuleEnabled and (requireBothChildRules ? bothPass : eitherPass)
+ 
+f_childInsideParent(SMTDraw parent, int childX1Time, int childX2Time) =>
+    int parentRefEnd = parent.refStart + parent.tfSec * 1000
+    int parentCurEnd = parent.curStart + parent.tfSec * 1000
+    bool refInside = childX1Time >= parent.refStart and childX1Time < parentRefEnd
+    bool curInside = childX2Time >= parent.curStart and childX2Time < parentCurEnd
+    refInside and curInside
+ 
+f_childInsideHigherWindow(int higherTfSec, int higherRefStart, int higherCurStart, int childX1Time, int childX2Time) =>
+    int higherRefEnd = higherRefStart + higherTfSec * 1000
+    int higherCurEnd = higherCurStart + higherTfSec * 1000
+    bool refInside = childX1Time >= higherRefStart and childX1Time < higherRefEnd
+    bool curInside = childX2Time >= higherCurStart and childX2Time < higherCurEnd
+    refInside and curInside
+ 
+f_isSuppressedByHigherTF(int dir, int tfSec, int x1Time, float y1, int x2Time, float y2, float tolerance) =>
+    bool suppressed = false
+    if array.size(smtEvents) > 0 and not (protect90 and tfSec == 5400)
+        if smtFilteringMode == "Balanced"
+            // Collapse only a true duplicate represented on a higher timeframe:
+            // same reference extreme AND same sweep extreme.
+            for i = 0 to array.size(smtEvents) - 1
+                SMTDraw ev = array.get(smtEvents, i)
+                if ev.dir == dir and ev.tfSec > tfSec
+                    bool sameEndpoint = ev.x2Time == x2Time and math.abs(ev.y2 - y2) <= tolerance
+                    bool sameReference = ev.x1Time == x1Time and math.abs(ev.y1 - y1) <= tolerance
+                    if sameEndpoint and sameReference
+                        suppressed := true
+                        break
+        else if smtFilteringMode == "Clean"
+            // Original aggressive Highest-TF-Wins behavior.
+            for i = 0 to array.size(smtEvents) - 1
+                SMTDraw ev = array.get(smtEvents, i)
+                if ev.dir == dir and ev.tfSec > tfSec
+                    bool sameEndpoint = ev.x2Time == x2Time and math.abs(ev.y2 - y2) <= tolerance
+                    bool sameReference = ev.x1Time == x1Time and math.abs(ev.y1 - y1) <= tolerance
+                    bool useful = f_childUsefulAgainstParent(dir, x2Time, y2, ev.x2Time, ev.y2)
+                    bool endpointDuplicate = sameEndpoint
+                    bool referenceDuplicate = sameReference and not useful
+                    bool nestedDuplicate = false
+                    if enableFractalCleanup and tfSec <= 60 * 60
+                        bool nested = f_childInsideParent(ev, x1Time, x2Time)
+                        nestedDuplicate := nested and not useful
+                    if endpointDuplicate or referenceDuplicate or nestedDuplicate
+                        suppressed := true
+                        break
+        // FULL MODE intentionally performs no cross-timeframe suppression.
+    suppressed
+ 
+f_deleteLowerTFEventsCoveredByHigher(int tfSec, int dir, int refStart, int curStart, int x1Time, float y1, int x2Time, float y2, float tolerance, string keepKey) =>
+    if array.size(smtEvents) > 0
+        if smtFilteringMode == "Balanced"
+            for i = array.size(smtEvents) - 1 to 0
+                SMTDraw ev = array.get(smtEvents, i)
+                if ev.key != keepKey and ev.dir == dir and ev.tfSec < tfSec and not (protect90 and ev.tfSec == 5400)
+                    bool sameEndpoint = ev.x2Time == x2Time and math.abs(ev.y2 - y2) <= tolerance
+                    bool sameReference = ev.x1Time == x1Time and math.abs(ev.y1 - y1) <= tolerance
+                    if sameEndpoint and sameReference
+                        f_deleteEventAt(i)
+        else if smtFilteringMode == "Clean"
+            for i = array.size(smtEvents) - 1 to 0
+                SMTDraw ev = array.get(smtEvents, i)
+                if ev.key != keepKey and ev.dir == dir and ev.tfSec < tfSec and not (protect90 and ev.tfSec == 5400)
+                    bool sameEndpoint = ev.x2Time == x2Time and math.abs(ev.y2 - y2) <= tolerance
+                    bool sameReference = ev.x1Time == x1Time and math.abs(ev.y1 - y1) <= tolerance
+                    bool useful = f_childUsefulAgainstParent(dir, ev.x2Time, ev.y2, x2Time, y2)
+                    bool endpointDuplicate = sameEndpoint
+                    bool referenceDuplicate = sameReference and not useful
+                    bool nestedDuplicate = false
+                    if enableFractalCleanup and ev.tfSec <= 60 * 60
+                        bool nested = f_childInsideHigherWindow(tfSec, refStart, curStart, ev.x1Time, ev.x2Time)
+                        nestedDuplicate := nested and not useful
+                    if endpointDuplicate or referenceDuplicate or nestedDuplicate
+                        f_deleteEventAt(i)
+        // FULL MODE intentionally keeps all cross-timeframe events.
+ 
+f_prepareDrawingPair() =>
+    while array.size(smtEvents) >= maxDrawings
+        f_deleteEventAt(array.size(smtEvents) - 1)
+ 
+f_countBucket(int minSecExclusive, int maxSec, int dir) =>
+    int count = 0
+    if array.size(smtEvents) > 0
+        for i = 0 to array.size(smtEvents) - 1
+            SMTDraw ev = array.get(smtEvents, i)
+            if ev.tfSec > minSecExclusive and ev.tfSec <= maxSec and ev.dir == dir
+                count += 1
+    count
+ 
+f_deleteOldestBucket(int minSecExclusive, int maxSec, int dir) =>
+    int oldestIdx = -1
+    int oldestTime = na
+    if array.size(smtEvents) > 0
+        for i = 0 to array.size(smtEvents) - 1
+            SMTDraw ev = array.get(smtEvents, i)
+            if ev.tfSec > minSecExclusive and ev.tfSec <= maxSec and ev.dir == dir
+                if oldestIdx == -1 or ev.x2Time < oldestTime
+                    oldestIdx := i
+                    oldestTime := ev.x2Time
+    if oldestIdx != -1
+        f_deleteEventAt(oldestIdx)
+ 
+f_enforceBucketCap(int minSecExclusive, int maxSec, int dir, int cap) =>
+    int guard = 0
+    while f_countBucket(minSecExclusive, maxSec, dir) > cap and guard < 100
+        f_deleteOldestBucket(minSecExclusive, maxSec, dir)
+        guard += 1
+ 
+f_countFastLtfTotal() =>
+    int count = 0
+    if array.size(smtEvents) > 0
+        for i = 0 to array.size(smtEvents) - 1
+            SMTDraw ev = array.get(smtEvents, i)
+            if ev.tfSec <= 5 * 60
+                count += 1
+    count
+ 
+f_deleteOldestFastLtf() =>
+    int oldestIdx = -1
+    int oldestTime = na
+    if array.size(smtEvents) > 0
+        for i = 0 to array.size(smtEvents) - 1
+            SMTDraw ev = array.get(smtEvents, i)
+            if ev.tfSec <= 5 * 60
+                if oldestIdx == -1 or ev.x2Time < oldestTime
+                    oldestIdx := i
+                    oldestTime := ev.x2Time
+    if oldestIdx != -1
+        f_deleteEventAt(oldestIdx)
+ 
+f_countLtfThrough(int maxSec) =>
+    int count = 0
+    if array.size(smtEvents) > 0
+        for i = 0 to array.size(smtEvents) - 1
+            SMTDraw ev = array.get(smtEvents, i)
+            if ev.tfSec <= maxSec
+                count += 1
+    count
+ 
+f_deleteOldestLtfThrough(int maxSec) =>
+    int oldestIdx = -1
+    int oldestTime = na
+    if array.size(smtEvents) > 0
+        for i = 0 to array.size(smtEvents) - 1
+            SMTDraw ev = array.get(smtEvents, i)
+            if ev.tfSec <= maxSec
+                if oldestIdx == -1 or ev.x2Time < oldestTime
+                    oldestIdx := i
+                    oldestTime := ev.x2Time
+    if oldestIdx != -1
+        f_deleteEventAt(oldestIdx)
+ 
+f_countExactTFDirection(string tf, int dir) =>
+    int count = 0
+    if array.size(smtEvents) > 0
+        for i = 0 to array.size(smtEvents) - 1
+            SMTDraw ev = array.get(smtEvents, i)
+            if ev.tf == tf and ev.dir == dir
+                count += 1
+    count
+ 
+f_deleteOldestExactTFDirection(string tf, int dir) =>
+    int oldestIdx = -1
+    int oldestTime = na
+    if array.size(smtEvents) > 0
+        for i = 0 to array.size(smtEvents) - 1
+            SMTDraw ev = array.get(smtEvents, i)
+            if ev.tf == tf and ev.dir == dir
+                if oldestIdx == -1 or ev.x2Time < oldestTime
+                    oldestIdx := i
+                    oldestTime := ev.x2Time
+    if oldestIdx != -1
+        f_deleteEventAt(oldestIdx)
+ 
+f_widestExactTFDirectionKey(string tf, int dir) =>
+    string bestKey = ""
+    int bestSpan = -1
+    int bestEnd = na
+    if array.size(smtEvents) > 0
+        for i = 0 to array.size(smtEvents) - 1
+            SMTDraw ev = array.get(smtEvents, i)
+            if ev.tf == tf and ev.dir == dir
+                int span = math.max(0, ev.x2Time - ev.x1Time)
+                if str.length(bestKey) == 0 or span > bestSpan or (span == bestSpan and (na(bestEnd) or ev.x2Time > bestEnd))
+                    bestKey := ev.key
+                    bestSpan := span
+                    bestEnd := ev.x2Time
+    bestKey
+ 
+f_deleteOldestExactTFDirectionExcept(string tf, int dir, string protectKey) =>
+    int oldestIdx = -1
+    int oldestEnd = na
+    int oldestRef = na
+    if array.size(smtEvents) > 0
+        for i = 0 to array.size(smtEvents) - 1
+            SMTDraw ev = array.get(smtEvents, i)
+            if ev.tf == tf and ev.dir == dir and ev.key != protectKey
+                bool olderEnd = oldestIdx == -1 or ev.x2Time < oldestEnd
+                bool sameEndOlderRef = oldestIdx != -1 and ev.x2Time == oldestEnd and ev.x1Time < oldestRef
+                if olderEnd or sameEndOlderRef
+                    oldestIdx := i
+                    oldestEnd := ev.x2Time
+                    oldestRef := ev.x1Time
+    if oldestIdx != -1
+        f_deleteEventAt(oldestIdx)
+ 
+// Balanced retention is separate from SMT detection. A developing event is never
+// allowed to permanently supersede closed history.
+f_newestClosedExactTFDirectionKey(string tf, int dir) =>
+    string bestKey = ""
+    int bestEnd = na
+    int bestRef = na
+    if array.size(smtEvents) > 0
+        for i = 0 to array.size(smtEvents) - 1
+            SMTDraw ev = array.get(smtEvents, i)
+            bool closedEvent = ev.lastSeenBar != bar_index
+            if ev.tf == tf and ev.dir == dir and closedEvent
+                bool newerEnd = str.length(bestKey) == 0 or ev.x2Time > bestEnd
+                bool sameEndNewerRef = str.length(bestKey) > 0 and ev.x2Time == bestEnd and ev.x1Time > bestRef
+                if newerEnd or sameEndNewerRef
+                    bestKey := ev.key
+                    bestEnd := ev.x2Time
+                    bestRef := ev.x1Time
+    bestKey
+ 
+f_macroClosedExactTFDirectionKey(string tf, int dir, string newestKey) =>
+    string bestKey = ""
+    int bestSpan = -1
+    int bestEnd = na
+    int newestIdx = f_findEvent(newestKey)
+    if newestIdx != -1 and balancedKeepMacro
+        SMTDraw newest = array.get(smtEvents, newestIdx)
+        int newestSpan = math.max(newest.tfSec * 1000, math.max(0, newest.x2Time - newest.x1Time))
+        float requiredSpan = newestSpan * balancedMacroSpanMultiple
+        if array.size(smtEvents) > 0
+            for i = 0 to array.size(smtEvents) - 1
+                SMTDraw ev = array.get(smtEvents, i)
+                bool closedEvent = ev.lastSeenBar != bar_index
+                if ev.tf == tf and ev.dir == dir and ev.key != newestKey and closedEvent
+                    int span = math.max(0, ev.x2Time - ev.x1Time)
+                    bool olderParent = ev.x1Time < newest.x1Time
+                    bool largeEnough = span >= requiredSpan
+                    if olderParent and largeEnough
+                        if str.length(bestKey) == 0 or span > bestSpan or (span == bestSpan and (na(bestEnd) or ev.x2Time > bestEnd))
+                            bestKey := ev.key
+                            bestSpan := span
+                            bestEnd := ev.x2Time
+    bestKey
+ 
+f_deleteClosedExactTFDirectionExcept(string tf, int dir, string keepNewestKey, string keepMacroKey) =>
+    bool changed = false
+    if array.size(smtEvents) > 0
+        for i = array.size(smtEvents) - 1 to 0
+            SMTDraw ev = array.get(smtEvents, i)
+            bool closedEvent = ev.lastSeenBar != bar_index
+            bool protected = ev.key == keepNewestKey or (str.length(keepMacroKey) > 0 and ev.key == keepMacroKey)
+            if ev.tf == tf and ev.dir == dir and closedEvent and not protected
+                f_deleteEventAt(i)
+                changed := true
+    changed
+ 
+f_deleteAllExactTFDirection(string tf, int dir) =>
+    bool changed = false
+    if array.size(smtEvents) > 0
+        for i = array.size(smtEvents) - 1 to 0
+            SMTDraw ev = array.get(smtEvents, i)
+            if ev.tf == tf and ev.dir == dir
+                f_deleteEventAt(i)
+                changed := true
+    changed
+ 
+f_applyBalancedSupersession(string tf, int dir, int cap) =>
+    bool changed = false
+    if cap <= 0
+        changed := f_deleteAllExactTFDirection(tf, dir)
+    else
+        string newestKey = f_newestClosedExactTFDirectionKey(tf, dir)
+        string macroKey = ""
+        if cap >= 2 and str.length(newestKey) > 0
+            macroKey := f_macroClosedExactTFDirectionKey(tf, dir, newestKey)
+        changed := f_deleteClosedExactTFDirectionExcept(tf, dir, newestKey, macroKey)
+    changed
+ 
+f_retentionCapForSec(int tfSec) =>
+    int cap = maxKeepHtfPerTfDir
+    if tfSec <= 5 * 60
+        cap := maxKeepFastPerTfDir
+    else if tfSec <= 15 * 60
+        cap := maxKeepMidPerTfDir
+    else if tfSec <= 60 * 60
+        cap := maxKeepHourPerTfDir
+    else if tfSec >= 24 * 60 * 60
+        cap := maxKeepDWPerTfDir
+    else
+        cap := maxKeepHtfPerTfDir
+    cap
+ 
+f_enforceExactTFRetention(string tf) =>
+    bool changed = false
+    if enablePerTfRetention
+        int tfSec = timeframe.in_seconds(tf)
+        int cap = f_retentionCapForSec(tfSec)
+        if smtFilteringMode == "Balanced" and balancedSupersession
+            bool bearChanged = f_applyBalancedSupersession(tf, -1, cap)
+            bool bullChanged = f_applyBalancedSupersession(tf, 1, cap)
+            changed := bearChanged or bullChanged
+        else
+            bool keepMacroPlusRecent = smtFilteringMode == "Balanced" and tfSec >= 60 * 60 and cap >= 2
+            int guardBear = 0
+            while f_countExactTFDirection(tf, -1) > cap and guardBear < 100
+                if keepMacroPlusRecent
+                    string macroBearKey = f_widestExactTFDirectionKey(tf, -1)
+                    f_deleteOldestExactTFDirectionExcept(tf, -1, macroBearKey)
+                else
+                    f_deleteOldestExactTFDirection(tf, -1)
+                guardBear += 1
+                changed := true
+            int guardBull = 0
+            while f_countExactTFDirection(tf, 1) > cap and guardBull < 100
+                if keepMacroPlusRecent
+                    string macroBullKey = f_widestExactTFDirectionKey(tf, 1)
+                    f_deleteOldestExactTFDirectionExcept(tf, 1, macroBullKey)
+                else
+                    f_deleteOldestExactTFDirection(tf, 1)
+                guardBull += 1
+                changed := true
+    changed
+ 
+f_enforceLtfCaps() =>
+    if enableLtfCaps
+        f_enforceBucketCap(0, 60, -1, maxM1PerDirection)
+        f_enforceBucketCap(0, 60, 1, maxM1PerDirection)
+        f_enforceBucketCap(60, 5 * 60, -1, maxM5PerDirection)
+        f_enforceBucketCap(60, 5 * 60, 1, maxM5PerDirection)
+        if maxFastLtfTotal > 0
+            int guardFast = 0
+            while f_countFastLtfTotal() > maxFastLtfTotal and guardFast < 100
+                f_deleteOldestFastLtf()
+                guardFast += 1
+        if maxLtf15Total > 0
+            int guard15 = 0
+            while f_countLtfThrough(15 * 60) > maxLtf15Total and guard15 < 100
+                f_deleteOldestLtfThrough(15 * 60)
+                guard15 += 1
+ 
+f_makeLine(bool useIndexX, int x1Time, int x1Idx, float y1, int x2Time, int x2Idx, float y2, color lnColor) =>
+    line ln = na
+    if useIndexX
+        ln := line.new(x1Idx, y1, x2Idx, y2, xloc=xloc.bar_index, color=lnColor, width=lineWidth, style=f_lineStyle(lineStyleInput))
+    else
+        ln := line.new(x1Time, y1, x2Time, y2, xloc=xloc.bar_time, color=lnColor, width=lineWidth, style=f_lineStyle(lineStyleInput))
+    ln
+ 
+f_makeLabel(bool useIndexX, int x1Time, int x1Idx, float y1, int x2Time, int x2Idx, float y2, int dir, string txt, string tip, string labelSizeStr) =>
+    int labelX = useIndexX ? int(math.round((x1Idx + x2Idx) / 2.0)) : int(math.round((x1Time + x2Time) / 2.0))
+    float midY = (y1 + y2) / 2.0
+    // Anchored exactly on the line midpoint (no floating offset); label style places text just above/below the line.
+    float labelY = midY
+    label_style = dir == -1 ? label.style_label_down : label.style_label_up
+    label lb = na
+    if useIndexX
+        lb := label.new(labelX, labelY, txt, xloc=xloc.bar_index, color=labelBgColor, textcolor=labelTextColor, style=label_style, size=f_labelSize(labelSizeStr), textalign=text.align_center, text_font_family=font.family_monospace)
+    else
+        lb := label.new(labelX, labelY, txt, xloc=xloc.bar_time, color=labelBgColor, textcolor=labelTextColor, style=label_style, size=f_labelSize(labelSizeStr), textalign=text.align_center, text_font_family=font.family_monospace)
+    label.set_tooltip(lb, tip)
+    lb
+ 
+f_updateLabel(label lb, bool useIndexX, int x1Time, int x1Idx, float y1, int x2Time, int x2Idx, float y2, int dir, string txt, string tip, string labelSizeStr) =>
+    int labelX = useIndexX ? int(math.round((x1Idx + x2Idx) / 2.0)) : int(math.round((x1Time + x2Time) / 2.0))
+    float midY = (y1 + y2) / 2.0
+    // Anchored exactly on the line midpoint (no floating offset); label style places text just above/below the line.
+    float labelY = midY
+    label_style = dir == -1 ? label.style_label_down : label.style_label_up
+    label.set_xy(lb, labelX, labelY)
+    label.set_text(lb, txt)
+    label.set_textcolor(lb, labelTextColor)
+    label.set_color(lb, labelBgColor)
+    label.set_style(lb, label_style)
+    label.set_size(lb, f_labelSize(labelSizeStr))
+    label.set_tooltip(lb, tip)
+ 
+f_drawOrUpdate(string key, string tf, int tfSec, int dir, int refStart, int curStart, int x1Time, int x1Idx, float y1, int x2Time, int x2Idx, float y2, float anchor, string txt, string tip, float endpointTol, string labelSizeStr, color tfColor) =>
+    bool drawn = false
+    if f_isSuppressedByHigherTF(dir, tfSec, x1Time, y1, x2Time, y2, endpointTol)
+        f_deleteEventByKey(key)
+        drawn := false
+    else
+        if smtFilteringMode == "Clean"
+            f_deleteSameEndpointEvents(tf, curStart, dir, x2Time, y2, endpointTol, key)
+            f_deleteSameReferenceEvents(tf, dir, x1Time, y1, endpointTol, key)
+        int transp = 100 - smtOpacity
+        color baseColor = useTfColors ? tfColor : (dir == -1 ? bearColor : bullColor)
+        color lnColor = color.new(baseColor, transp)
+        bool useIndexX = f_useIndexX(x1Idx)
+        int idx = f_findEvent(key)
+        if idx == -1
+            f_prepareDrawingPair()
+            line ln = f_makeLine(useIndexX, x1Time, x1Idx, y1, x2Time, x2Idx, y2, lnColor)
+            label lb = f_makeLabel(useIndexX, x1Time, x1Idx, y1, x2Time, x2Idx, y2, dir, txt, tip, labelSizeStr)
+            SMTDraw ev = SMTDraw.new()
+            ev.key := key
+            ev.tf := tf
+            ev.tfSec := tfSec
+            ev.dir := dir
+            ev.refStart := refStart
+            ev.curStart := curStart
+            ev.lastSeenBar := bar_index
+            ev.anchor := anchor
+            ev.x1Time := x1Time
+            ev.x2Time := x2Time
+            ev.x1Idx := x1Idx
+            ev.x2Idx := x2Idx
+            ev.y1 := y1
+            ev.y2 := y2
+            ev.useIndexX := useIndexX
+            ev.ln := ln
+            ev.lb := lb
+            array.unshift(smtEvents, ev)
+        else
+            SMTDraw ev = array.get(smtEvents, idx)
+            bool recreate = ev.useIndexX != useIndexX or na(ev.ln) or na(ev.lb)
+            if recreate
+                if not na(ev.ln)
+                    line.delete(ev.ln)
+                if not na(ev.lb)
+                    label.delete(ev.lb)
+                ev.ln := f_makeLine(useIndexX, x1Time, x1Idx, y1, x2Time, x2Idx, y2, lnColor)
+                ev.lb := f_makeLabel(useIndexX, x1Time, x1Idx, y1, x2Time, x2Idx, y2, dir, txt, tip, labelSizeStr)
+                ev.useIndexX := useIndexX
+            else
+                line.set_xy1(ev.ln, useIndexX ? x1Idx : x1Time, y1)
+                line.set_xy2(ev.ln, useIndexX ? x2Idx : x2Time, y2)
+                line.set_color(ev.ln, lnColor)
+                line.set_width(ev.ln, lineWidth)
+                line.set_style(ev.ln, f_lineStyle(lineStyleInput))
+                f_updateLabel(ev.lb, useIndexX, x1Time, x1Idx, y1, x2Time, x2Idx, y2, dir, txt, tip, labelSizeStr)
+            ev.lastSeenBar := bar_index
+            ev.anchor := anchor
+            ev.refStart := refStart
+            ev.curStart := curStart
+            ev.x1Time := x1Time
+            ev.x2Time := x2Time
+            ev.x1Idx := x1Idx
+            ev.x2Idx := x2Idx
+            ev.y1 := y1
+            ev.y2 := y2
+            array.set(smtEvents, idx, ev)
+        f_deleteLowerTFEventsCoveredByHigher(tfSec, dir, refStart, curStart, x1Time, y1, x2Time, y2, endpointTol, key)
+        drawn := true
+    drawn
+ 
+f_deleteUnseenCurrentTF(string tf, int curStart) =>
+    // A live/developing SMT should not remain visible after it stops qualifying
+    // during the current timeframe candle.
+    if cleanupInvalidLive and array.size(smtEvents) > 0
+        for i = array.size(smtEvents) - 1 to 0
+            SMTDraw ev = array.get(smtEvents, i)
+            if ev.tf == tf and ev.curStart == curStart and ev.lastSeenBar != bar_index
+                f_deleteEventAt(i)
+ 
+f_purgeBroken() =>
+    if deleteBroken and array.size(smtEvents) > 0
+        for i = array.size(smtEvents) - 1 to 0
+            SMTDraw ev = array.get(smtEvents, i)
+            bool laterBar = bar_index > ev.lastSeenBar
+            bool brokeHigh = ev.dir == -1 and high > ev.anchor
+            bool brokeLow = ev.dir == 1 and low < ev.anchor
+            bool broken = laterBar and (brokeHigh or brokeLow)
+            if broken
+                f_deleteEventAt(i)
+ 
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// COMPARISON DATA
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+comparisonTicker1 = f_getComparisonTicker(comparisonSymbol1)
+comparisonTicker2 = f_getComparisonTicker(comparisonSymbol2)
+comparisonTicker3 = f_getComparisonTicker(comparisonSymbol3)
+comparisonTicker4 = f_getComparisonTicker(comparisonSymbol4)
+ 
+// Comparison high/low on the current chart timeframe. Requests only execute when
+// the comparison symbol is enabled, so disabled symbols cost nothing against
+// TradingView's request.security limit.
+f_cmpChart(string sym, bool on) =>
+    float h = na
+    float l = na
+    if on
+        [t, tc, ch, cl] = request.security(sym, timeframe.period, [time, time_close, high, low], gaps=barmerge.gaps_on, lookahead=barmerge.lookahead_off, ignore_invalid_symbol=true)
+        bool aligned = not na(t) and not na(tc) and t == time and tc == time_close
+        if aligned and not na(ch) and not na(cl)
+            h := ch
+            l := cl
+    [h, l]
+ 
+// Previous closed candle high/low on a given timeframe. [1] + lookahead_on is safe
+// because the requested candle is already closed.
+f_prevHL(string sym, string tf, bool on) =>
+    float h = na
+    float l = na
+    if on
+        [ph, pl] = request.security(sym, tf, [high[1], low[1]], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on, ignore_invalid_symbol=true)
+        h := ph
+        l := pl
+    [h, l]
+ 
+// Previous candle high/low of all four comparison symbols for one timeframe.
+f_nativePrev4(string tf, bool tfOn) =>
+    int sec = timeframe.in_seconds(tf)
+    bool okTf = showChartSmt and tfOn and sec >= timeframe.in_seconds(timeframe.period) and (repairLtfPrev or sec > 3600)
+    [h1, l1] = f_prevHL(comparisonTicker1, tf, okTf and useComparison1)
+    [h2, l2] = f_prevHL(comparisonTicker2, tf, okTf and useComparison2)
+    [h3, l3] = f_prevHL(comparisonTicker3, tf, okTf and useComparison3)
+    [h4, l4] = f_prevHL(comparisonTicker4, tf, okTf and useComparison4)
+    [h1, l1, h2, l2, h3, l3, h4, l4]
+ 
+[cmp1HighChart, cmp1LowChart] = f_cmpChart(comparisonTicker1, useComparison1 and showChartSmt)
+[cmp2HighChart, cmp2LowChart] = f_cmpChart(comparisonTicker2, useComparison2 and showChartSmt)
+[cmp3HighChart, cmp3LowChart] = f_cmpChart(comparisonTicker3, useComparison3 and showChartSmt)
+[cmp4HighChart, cmp4LowChart] = f_cmpChart(comparisonTicker4, useComparison4 and showChartSmt)
+ 
+float[] cmpHNow = array.from(cmp1HighChart, cmp2HighChart, cmp3HighChart, cmp4HighChart)
+float[] cmpLNow = array.from(cmp1LowChart, cmp2LowChart, cmp3LowChart, cmp4LowChart)
+ 
+// Native previous Daily/Weekly reference candles of the chart symbol.
+[chartDPrevH, chartDPrevL] = f_prevHL(syminfo.tickerid, tfD, tfD_on and showChartSmt)
+[chartWPrevH, chartWPrevL] = f_prevHL(syminfo.tickerid, tfW, tfW_on and showChartSmt)
+ 
+[pW1H, pW1L, pW2H, pW2L, pW3H, pW3L, pW4H, pW4L]       = f_nativePrev4(tfW,  tfW_on)
+[pD1H, pD1L, pD2H, pD2L, pD3H, pD3L, pD4H, pD4L]       = f_nativePrev4(tfD,  tfD_on)
+[p7H1H, p7H1L, p7H2H, p7H2L, p7H3H, p7H3L, p7H4H, p7H4L] = f_nativePrev4(tf7H, tf7H_on)
+[p6H1H, p6H1L, p6H2H, p6H2L, p6H3H, p6H3L, p6H4H, p6H4L] = f_nativePrev4(tf6H, tf6H_on)
+[p4H1H, p4H1L, p4H2H, p4H2L, p4H3H, p4H3L, p4H4H, p4H4L] = f_nativePrev4(tf4H, tf4H_on)
+[p901H, p901L, p902H, p902L, p903H, p903L, p904H, p904L] = f_nativePrev4(tf90, tf90_on)
+[p1H1H, p1H1L, p1H2H, p1H2L, p1H3H, p1H3L, p1H4H, p1H4L] = f_nativePrev4(tf1H, tf1H_on)
+[p301H, p301L, p302H, p302L, p303H, p303L, p304H, p304L] = f_nativePrev4(tf30, tf30_on)
+[p151H, p151L, p152H, p152L, p153H, p153L, p154H, p154L] = f_nativePrev4(tf15, tf15_on)
+[p51H, p51L, p52H, p52L, p53H, p53L, p54H, p54L]       = f_nativePrev4(tf5,  tf5_on)
+[p11H, p11L, p12H, p12L, p13H, p13L, p14H, p14L]       = f_nativePrev4(tf1,  tf1_on)
+ 
+chartShort = f_shortSymbol(syminfo.ticker)
+ 
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// CORE MTF PROCESSOR
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Comparison data is stored in flat arrays: index k (0..3) = comparison symbol k+1.
+// History arrays hold 4 consecutive entries per stored candle (slot * 4 + k).
+f_processTF(bool enabled, string tf, int slotLookback, color tfColor, float[] cmpH, float[] cmpL, float nativePrevH, float nativePrevL, float[] nativePrevCmpH, float[] nativePrevCmpL) =>
+    bool bearPrinted = false
+    bool bullPrinted = false
+    int tfSec = timeframe.in_seconds(tf)
+    int chartSec = timeframe.in_seconds(timeframe.period)
+    bool run = enabled and tfSec >= chartSec and showChartSmt
+    int activeLookback = usePerTfLookbacks ? slotLookback : lookbackCandles
+ 
+    var float curH = na
+    var float curL = na
+    var int   curHT = na
+    var int   curLT = na
+    var int   curHI = na
+    var int   curLI = na
+    var int   curStart = na
+    var float[] curCmpH = array.new_float(4, na)
+    var float[] curCmpL = array.new_float(4, na)
+    var bool[]  curCmpValid = array.new_bool(4, false)
+    var float[] hHist = array.new_float(0)
+    var float[] lHist = array.new_float(0)
+    var int[]   hTimeHist = array.new_int(0)
+    var int[]   lTimeHist = array.new_int(0)
+    var int[]   hIdxHist = array.new_int(0)
+    var int[]   lIdxHist = array.new_int(0)
+    var int[]   startHist = array.new_int(0)
+    var float[] cmpHHist = array.new_float(0)
+    var float[] cmpLHist = array.new_float(0)
+ 
+    bool[] useC = array.from(useComparison1, useComparison2, useComparison3, useComparison4)
+    int requiredComps = (useComparison1 ? 1 : 0) + (useComparison2 ? 1 : 0) + (useComparison3 ? 1 : 0) + (useComparison4 ? 1 : 0)
+    bool anyComparisonMode = requiredComps > 0
+ 
+    if run
+        int thisStart = time(tf)
+        if na(curStart)
+            curStart := thisStart
+            curH := high
+            curL := low
+            curHT := time
+            curLT := time
+            curHI := bar_index
+            curLI := bar_index
+            for k = 0 to 3
+                float ch = array.get(cmpH, k)
+                float cl = array.get(cmpL, k)
+                array.set(curCmpH, k, ch)
+                array.set(curCmpL, k, cl)
+                array.set(curCmpValid, k, not na(ch) and not na(cl))
+        else
+            bool newTF = thisStart != curStart
+            if newTF
+                if not persistAfterClose
+                    f_deleteEventsByTFStart(tf, curStart)
+                array.unshift(hHist, curH)
+                array.unshift(lHist, curL)
+                array.unshift(hTimeHist, curHT)
+                array.unshift(lTimeHist, curLT)
+                array.unshift(hIdxHist, curHI)
+                array.unshift(lIdxHist, curLI)
+                array.unshift(startHist, curStart)
+                for k = 3 to 0
+                    bool v = array.get(curCmpValid, k)
+                    array.unshift(cmpHHist, v ? array.get(curCmpH, k) : na)
+                    array.unshift(cmpLHist, v ? array.get(curCmpL, k) : na)
+                while array.size(hHist) > activeLookback + 10
+                    array.pop(hHist)
+                    array.pop(lHist)
+                    array.pop(hTimeHist)
+                    array.pop(lTimeHist)
+                    array.pop(hIdxHist)
+                    array.pop(lIdxHist)
+                    array.pop(startHist)
+                    for k = 0 to 3
+                        if array.size(cmpHHist) > 0
+                            array.pop(cmpHHist)
+                            array.pop(cmpLHist)
+                curStart := thisStart
+                curH := high
+                curL := low
+                curHT := time
+                curLT := time
+                curHI := bar_index
+                curLI := bar_index
+                for k = 0 to 3
+                    float ch = array.get(cmpH, k)
+                    float cl = array.get(cmpL, k)
+                    array.set(curCmpH, k, ch)
+                    array.set(curCmpL, k, cl)
+                    array.set(curCmpValid, k, not na(ch) and not na(cl))
+            else
+                if high > curH or na(curH)
+                    curH := high
+                    curHT := time
+                    curHI := bar_index
+                if low < curL or na(curL)
+                    curL := low
+                    curLT := time
+                    curLI := bar_index
+                // Preserve the original strict behavior on 1H and below in Clean mode.
+                // For >1H (or non-Clean) keep any valid aligned samples we have.
+                bool tolerantComparisonSampling = smtFilteringMode != "Clean" or tfSec > 60 * 60
+                for k = 0 to 3
+                    float ch = array.get(cmpH, k)
+                    float cl = array.get(cmpL, k)
+                    if not na(ch)
+                        float oh = array.get(curCmpH, k)
+                        array.set(curCmpH, k, na(oh) ? ch : math.max(oh, ch))
+                    if not na(cl)
+                        float ol = array.get(curCmpL, k)
+                        array.set(curCmpL, k, na(ol) ? cl : math.min(ol, cl))
+                    bool sampleValid = not na(ch) and not na(cl)
+                    bool oldValid = array.get(curCmpValid, k)
+                    array.set(curCmpValid, k, tolerantComparisonSampling ? (oldValid or sampleValid) : (oldValid and sampleValid))
+ 
+        float minSweep = 0.0
+        float dedupe = dedupeTicks * syminfo.mintick
+        float endpointTol = math.max(syminfo.mintick, dedupe)
+        string tfSize = f_tfSizeString(tf)
+        float[] usedBearLevels = array.new_float(0)
+        float[] usedBullLevels = array.new_float(0)
+        int[] usedBearX = array.new_int(0)
+        float[] usedBearY = array.new_float(0)
+        int[] usedBullX = array.new_int(0)
+        float[] usedBullY = array.new_float(0)
+        float[] refCmpH = array.new_float(4, na)
+        float[] refCmpL = array.new_float(4, na)
+        bool[] divFlags = array.new_bool(4, false)
+        int bearCount = 0
+        int bullCount = 0
+        int histSize = array.size(hHist)
+        int lb = math.min(activeLookback, histSize)
+ 
+        if lb > 0
+            for refIdx = 0 to lb - 1
+                float refH = array.get(hHist, refIdx)
+                float refL = array.get(lHist, refIdx)
+                int refHT = array.get(hTimeHist, refIdx)
+                int refLT = array.get(lTimeHist, refIdx)
+                int refHI = array.get(hIdxHist, refIdx)
+                int refLI = array.get(lIdxHist, refIdx)
+                int refStart = array.get(startHist, refIdx)
+                for k = 0 to 3
+                    int hi = refIdx * 4 + k
+                    array.set(refCmpH, k, hi < array.size(cmpHHist) ? array.get(cmpHHist, hi) : na)
+                    array.set(refCmpL, k, hi < array.size(cmpLHist) ? array.get(cmpLHist, hi) : na)
+ 
+                // Adjacent-period repair on every timeframe using confirmed native [1] values.
+                if refIdx == 0
+                    if not na(nativePrevH) and not na(nativePrevL)
+                        refH := nativePrevH
+                        refL := nativePrevL
+                    for k = 0 to 3
+                        float nH = array.get(nativePrevCmpH, k)
+                        float nL = array.get(nativePrevCmpL, k)
+                        if array.get(useC, k) and not na(nH) and not na(nL)
+                            array.set(refCmpH, k, nH)
+                            array.set(refCmpL, k, nL)
+ 
+                bool untouchedHigh = true
+                bool untouchedLow = true
+                if refIdx > 0
+                    for checkIdx = 0 to refIdx - 1
+                        if array.get(hHist, checkIdx) >= refH
+                            untouchedHigh := false
+                        if array.get(lHist, checkIdx) <= refL
+                            untouchedLow := false
+ 
+                bool swingHigh = f_localSwingHigh(refIdx, refH, hHist, endpointTol)
+                bool swingLow = f_localSwingLow(refIdx, refL, lHist, endpointTol)
+                bool validHigh = smtFilteringMode == "Clean" ? untouchedHigh : smtFilteringMode == "Full" ? true : (untouchedHigh or swingHigh)
+                bool validLow = smtFilteringMode == "Clean" ? untouchedLow : smtFilteringMode == "Full" ? true : (untouchedLow or swingLow)
+ 
+                bool endpointBearUsed = smtFilteringMode == "Clean" and f_endpointAlreadyUsed(usedBearX, usedBearY, curHT, curH, endpointTol)
+                if showBearish and validHigh and bearCount < maxPerDirection and not endpointBearUsed and not f_levelAlreadyUsed(usedBearLevels, refH, dedupe)
+                    bool chartTookHigh = curH > refH + minSweep
+                    int validComps = 0
+                    int divCount = 0
+                    for k = 0 to 3
+                        float cH = array.get(curCmpH, k)
+                        float rH = array.get(refCmpH, k)
+                        bool have = array.get(useC, k) and array.get(curCmpValid, k) and not na(cH) and not na(rH)
+                        bool took = have and cH > rH + minSweep
+                        bool div = have and chartTookHigh != took
+                        array.set(divFlags, k, div)
+                        if have
+                            validComps += 1
+                        if div
+                            divCount += 1
+                    bool eitherDiv = validComps > 0 and divCount > 0
+                    bool allDiv = requiredComps > 0 and validComps == requiredComps and divCount == requiredComps
+                    bool isBear = anyComparisonMode ? (comparisonTriggerMode == "All enabled comparisons" ? allDiv : eitherDiv) : false
+                    bool closeOk = not requireCloseBack or close < refH
+                    if isBear and closeOk
+                        string suffix = anyComparisonMode ? f_compSuffix(divFlags) : f_logoSymbol(syminfo.ticker)
+                        if str.length(suffix) == 0
+                            suffix := f_enabledCompSuffix()
+                        string txt = f_labelLogo(tf, suffix)
+                        string tip = anyComparisonMode ? "Bearish SMT vs " + suffix : chartShort + " swept its own HTF high."
+                        float y1 = refH
+                        float y2 = curH
+                        int x1Time = refHT
+                        int x2Time = curHT
+                        int x1Idx = refHI
+                        int x2Idx = curHI
+                        float anchor = chartTookHigh ? curH : refH
+                        string key = tf + "|BEAR|" + str.tostring(refStart) + "|" + str.tostring(curStart)
+                        bool drawn = f_drawOrUpdate(key, tf, tfSec, -1, refStart, curStart, x1Time, x1Idx, y1, x2Time, x2Idx, y2, anchor, txt, tip, endpointTol, tfSize, tfColor)
+                        if drawn
+                            bearPrinted := true
+                            bearCount += 1
+                            array.push(usedBearLevels, refH)
+                            array.push(usedBearY, curH)
+                            array.push(usedBearX, curHT)
+ 
+                bool endpointBullUsed = smtFilteringMode == "Clean" and f_endpointAlreadyUsed(usedBullX, usedBullY, curLT, curL, endpointTol)
+                if showBullish and validLow and bullCount < maxPerDirection and not endpointBullUsed and not f_levelAlreadyUsed(usedBullLevels, refL, dedupe)
+                    bool chartTookLow = curL < refL - minSweep
+                    int validComps = 0
+                    int divCount = 0
+                    for k = 0 to 3
+                        float cL = array.get(curCmpL, k)
+                        float rL = array.get(refCmpL, k)
+                        bool have = array.get(useC, k) and array.get(curCmpValid, k) and not na(cL) and not na(rL)
+                        bool took = have and cL < rL - minSweep
+                        bool div = have and chartTookLow != took
+                        array.set(divFlags, k, div)
+                        if have
+                            validComps += 1
+                        if div
+                            divCount += 1
+                    bool eitherDiv = validComps > 0 and divCount > 0
+                    bool allDiv = requiredComps > 0 and validComps == requiredComps and divCount == requiredComps
+                    bool isBull = anyComparisonMode ? (comparisonTriggerMode == "All enabled comparisons" ? allDiv : eitherDiv) : false
+                    bool closeOk = not requireCloseBack or close > refL
+                    if isBull and closeOk
+                        string suffix = anyComparisonMode ? f_compSuffix(divFlags) : f_logoSymbol(syminfo.ticker)
+                        if str.length(suffix) == 0
+                            suffix := f_enabledCompSuffix()
+                        string txt = f_labelLogo(tf, suffix)
+                        string tip = anyComparisonMode ? "Bullish SMT vs " + suffix : chartShort + " swept its own HTF low."
+                        float y1 = refL
+                        float y2 = curL
+                        int x1Time = refLT
+                        int x2Time = curLT
+                        int x1Idx = refLI
+                        int x2Idx = curLI
+                        float anchor = chartTookLow ? curL : refL
+                        string key = tf + "|BULL|" + str.tostring(refStart) + "|" + str.tostring(curStart)
+                        bool drawn = f_drawOrUpdate(key, tf, tfSec, 1, refStart, curStart, x1Time, x1Idx, y1, x2Time, x2Idx, y2, anchor, txt, tip, endpointTol, tfSize, tfColor)
+                        if drawn
+                            bullPrinted := true
+                            bullCount += 1
+                            array.push(usedBullLevels, refL)
+                            array.push(usedBullY, curL)
+                            array.push(usedBullX, curLT)
+ 
+        f_deleteUnseenCurrentTF(tf, curStart)
+    else
+        // Prevent drawings from a disabled slot or a timeframe below the chart
+        // timeframe from remaining on the chart after settings/timeframe changes.
+        f_deleteAllEventsByTF(tf)
+ 
+    [bearPrinted, bullPrinted]
+ 
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// PROCESS HIGH TF → LOW TF
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[bW,  uW]  = f_processTF(tfW_on,  tfW,  lookbackW,  colW,  cmpHNow, cmpLNow, chartWPrevH, chartWPrevL, array.from(pW1H, pW2H, pW3H, pW4H), array.from(pW1L, pW2L, pW3L, pW4L))
+[bD,  uD]  = f_processTF(tfD_on,  tfD,  lookbackD,  colD,  cmpHNow, cmpLNow, chartDPrevH, chartDPrevL, array.from(pD1H, pD2H, pD3H, pD4H), array.from(pD1L, pD2L, pD3L, pD4L))
+[b7H, u7H] = f_processTF(tf7H_on, tf7H, lookback7H, col7H, cmpHNow, cmpLNow, na, na, array.from(p7H1H, p7H2H, p7H3H, p7H4H), array.from(p7H1L, p7H2L, p7H3L, p7H4L))
+[b6H, u6H] = f_processTF(tf6H_on, tf6H, lookback6H, col6H, cmpHNow, cmpLNow, na, na, array.from(p6H1H, p6H2H, p6H3H, p6H4H), array.from(p6H1L, p6H2L, p6H3L, p6H4L))
+[b4H, u4H] = f_processTF(tf4H_on, tf4H, lookback4H, col4H, cmpHNow, cmpLNow, na, na, array.from(p4H1H, p4H2H, p4H3H, p4H4H), array.from(p4H1L, p4H2L, p4H3L, p4H4L))
+[b90, u90] = f_processTF(tf90_on, tf90, lookback90, col90, cmpHNow, cmpLNow, na, na, array.from(p901H, p902H, p903H, p904H), array.from(p901L, p902L, p903L, p904L))
+[b1H, u1H] = f_processTF(tf1H_on, tf1H, lookback1H, col1H, cmpHNow, cmpLNow, na, na, array.from(p1H1H, p1H2H, p1H3H, p1H4H), array.from(p1H1L, p1H2L, p1H3L, p1H4L))
+[b30, u30] = f_processTF(tf30_on, tf30, lookback30, col30, cmpHNow, cmpLNow, na, na, array.from(p301H, p302H, p303H, p304H), array.from(p301L, p302L, p303L, p304L))
+[b15, u15] = f_processTF(tf15_on, tf15, lookback15, col15, cmpHNow, cmpLNow, na, na, array.from(p151H, p152H, p153H, p154H), array.from(p151L, p152L, p153L, p154L))
+[b5,  u5]  = f_processTF(tf5_on,  tf5,  lookback5,  col5,  cmpHNow, cmpLNow, na, na, array.from(p51H, p52H, p53H, p54H), array.from(p51L, p52L, p53L, p54L))
+[b1,  u1]  = f_processTF(tf1_on,  tf1,  lookback1,  col1,  cmpHNow, cmpLNow, na, na, array.from(p11H, p12H, p13H, p14H), array.from(p11L, p12L, p13L, p14L))
+ 
+f_purgeBroken()
+f_enforceLtfCaps()
+ 
+// Persistent per-timeframe caps (run after the higher-TF suppression pass).
+f_enforceExactTFRetention(tfW)
+f_enforceExactTFRetention(tfD)
+f_enforceExactTFRetention(tf7H)
+f_enforceExactTFRetention(tf6H)
+f_enforceExactTFRetention(tf4H)
+f_enforceExactTFRetention(tf90)
+f_enforceExactTFRetention(tf1H)
+f_enforceExactTFRetention(tf30)
+f_enforceExactTFRetention(tf15)
+f_enforceExactTFRetention(tf5)
+f_enforceExactTFRetention(tf1)
+ 
+anyBear = bW or bD or b7H or b6H or b4H or b90 or b1H or b30 or b15 or b5 or b1
+anyBull = uW or uD or u7H or u6H or u4H or u90 or u1H or u30 or u15 or u5 or u1
+ 
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// ALERTS
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+alertcondition(enableAlerts and anyBear, "Bearish MTF SMT / Sweep", "Bearish MTF SMT or high sweep printed.")
+alertcondition(enableAlerts and anyBull, "Bullish MTF SMT / Sweep", "Bullish MTF SMT or low sweep printed.")
+ 
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// HTF PANEL CANDLES + PSP + SWEEPS + PANEL SMT
+// (panel code adapted from "HTF Panel Candles v8 + PSP + Sweeps"; credits:
+//  (c) fadizeidan, (c) cephxs, (c) fstarcapital - Mozilla Public License 2.0; C1-C3 labels adapted from BUBBLY / GXV)
+//━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+color color_transparent = #ffffff00
+ 
+// Assets 1-4 (shared with the chart SMT) drive PSP and panel SMT.
+bool[]   useCmp     = array.from(useComparison1, useComparison2, useComparison3, useComparison4)
+string[] cmpTickers = array.from(comparisonTicker1, comparisonTicker2, comparisonTicker3, comparisonTicker4)
+bool needAssets = psp_on or showPanelSmt
+ 
+type Candle
+    float o
+    float c
+    float h
+    float l
+    int o_time
+    int bar_idx
+    int high_bar_idx
+    int low_bar_idx
+    box body
+    line wick_up
+    line wick_down
+    bool has_divergence
+    bool is_bullish_div
+    bool is_psp
+    array<float> aH
+    array<float> aL
+    line smt_bear_line
+    line smt_bull_line
+    label smt_bear_lbl
+    label smt_bull_lbl
+    float smt_bear_y1
+    float smt_bear_y2
+    float smt_bull_y1
+    float smt_bull_y2
+    array<line> sweep_lines
+    array<int> sweep_c1_indices
+    array<bool> sweep_is_bullish
+    array<float> sweep_c1_levels
+ 
+type CandleSettings
+    bool show
+    string htf
+    int max_display
+    float own_o
+    float own_h
+    float own_l
+    float own_c
+ 
+type Settings
+    color bull_body
+    color bull_border
+    color bull_wick
+    color bear_body
+    color bear_border
+    color bear_wick
+    int offset
+    int buffer
+    int htf_buffer
+    int width
+    string label_position
+    string label_alignment
+    bool sweep_show
+    color sweep_color
+    string sweep_style
+    int sweep_width
+    bool sweep_invalidate
+    bool htf_label_show
+    color htf_label_color
+    string htf_label_size
+    bool htf_timer_show
+    color htf_timer_color
+    string htf_timer_size
+ 
+type CandleSet
+    array<Candle> candles
+    CandleSettings settings
+    label tfNameTop
+    label tfNameBottom
+    label tfTimerTop
+    label tfTimerBottom
+    array<float> aO
+    array<float> aC
+    array<float> aH
+    array<float> aL
+    array<bool> aHas
+    array<label> c123
+ 
+Settings settings = Settings.new()
+var CandleSettings SettingsHTF1 = CandleSettings.new()
+var CandleSettings SettingsHTF2 = CandleSettings.new()
+var CandleSettings SettingsHTF3 = CandleSettings.new()
+var CandleSettings SettingsHTF4 = CandleSettings.new()
+var CandleSettings SettingsHTF5 = CandleSettings.new()
+var CandleSettings SettingsHTF6 = CandleSettings.new()
+var array<Candle> candles_1 = array.new<Candle>(0)
+var array<Candle> candles_2 = array.new<Candle>(0)
+var array<Candle> candles_3 = array.new<Candle>(0)
+var array<Candle> candles_4 = array.new<Candle>(0)
+var array<Candle> candles_5 = array.new<Candle>(0)
+var array<Candle> candles_6 = array.new<Candle>(0)
+ 
+var CandleSet htf1 = CandleSet.new()
+htf1.settings := SettingsHTF1
+htf1.candles := candles_1
+var CandleSet htf2 = CandleSet.new()
+htf2.settings := SettingsHTF2
+htf2.candles := candles_2
+var CandleSet htf3 = CandleSet.new()
+htf3.settings := SettingsHTF3
+htf3.candles := candles_3
+var CandleSet htf4 = CandleSet.new()
+htf4.settings := SettingsHTF4
+htf4.candles := candles_4
+var CandleSet htf5 = CandleSet.new()
+htf5.settings := SettingsHTF5
+htf5.candles := candles_5
+var CandleSet htf6 = CandleSet.new()
+htf6.settings := SettingsHTF6
+htf6.candles := candles_6
+ 
+var array<CandleSet> allSets = array.from(htf1, htf2, htf3, htf4, htf5, htf6)
+ 
+f_tfMap(string s) =>
+    switch s
+        '15m' => '15'
+        '30m' => '30'
+        '1H'  => '60'
+        '90m' => '90'
+        '4H'  => '240'
+        '6H'  => '360'
+        '7H'  => '420'
+        '1D'  => 'D'
+        '1W'  => 'W'
+        =>       '60'
+ 
+// 4H, 6H, 7H, 1D and above = 3 candles; everything else = 5 candles
+f_autoCount(string tf) =>
+    int sec = timeframe.in_seconds(tf)
+    sec >= 14400 ? 3 : 5
+ 
+int cnt1 = htf_auto_count ? f_autoCount(f_tfMap(htfTf1)) : htfCnt1
+int cnt2 = htf_auto_count ? f_autoCount(f_tfMap(htfTf2)) : htfCnt2
+int cnt3 = htf_auto_count ? f_autoCount(f_tfMap(htfTf3)) : htfCnt3
+int cnt4 = htf_auto_count ? f_autoCount(f_tfMap(htfTf4)) : htfCnt4
+int cnt5 = htf_auto_count ? f_autoCount(f_tfMap(htfTf5)) : htfCnt5
+int cnt6 = htf_auto_count ? f_autoCount(f_tfMap(htfTf6)) : htfCnt6
+ 
+// Candle fill is composited over the chart background (opaque)
+f_opaque(color c) =>
+    float a = 1.0 - color.t(c) / 100.0
+    color bg = chart.bg_color
+    color.rgb(int(math.round(color.r(c) * a + color.r(bg) * (1.0 - a))), int(math.round(color.g(c) * a + color.g(bg) * (1.0 - a))), int(math.round(color.b(c) * a + color.b(bg) * (1.0 - a))))
+ 
+htf1.settings.show := htfOn1
+htf2.settings.show := htfOn2
+htf3.settings.show := htfOn3
+htf4.settings.show := htfOn4
+htf5.settings.show := htfOn5
+htf6.settings.show := htfOn6
+ 
+settings.bull_body     := in_bullBody
+settings.bear_body     := in_bearBody
+settings.bull_border   := in_bullBorder
+settings.bear_border   := in_bearBorder
+settings.bull_wick     := in_bullWick
+settings.bear_wick     := in_bearWick
+settings.offset        := in_offset
+settings.width         := in_width * 2
+settings.buffer        := in_buffer
+settings.htf_buffer    := in_htfBuffer
+settings.htf_label_color := in_lblColor
+settings.htf_label_size  := in_lblSize
+settings.htf_timer_color := in_tmrColor
+settings.htf_timer_size  := in_tmrSize
+settings.htf_timer_show  := in_tmrOn
+settings.htf_label_show  := in_htfLblOn
+settings.label_position  := in_lblPos
+settings.label_alignment := in_lblAlign
+settings.sweep_show      := in_sweepOn
+settings.sweep_color     := in_sweepColor
+settings.sweep_style     := in_sweepStyle
+settings.sweep_width     := 1
+settings.sweep_invalidate := in_sweepInval
+ 
+// ═════════════ UTILITIES ═════════════
+ValidTimeframe(string HTF) =>
+    int chartSeconds = timeframe.in_seconds(timeframe.period)
+    int htfSeconds = timeframe.in_seconds(HTF)
+    not na(chartSeconds) and not na(htfSeconds) and htfSeconds > chartSeconds
+ 
+RemainingTime(string HTF) =>
+    if barstate.isrealtime
+        timeRemaining = (time_close(HTF) - timenow) / 1000
+        days = math.floor(timeRemaining / 86400)
+        hours = math.floor((timeRemaining - days * 86400) / 3600)
+        minutes = math.floor((timeRemaining - days * 86400 - hours * 3600) / 60)
+        seconds = math.floor(timeRemaining - days * 86400 - hours * 3600 - minutes * 60)
+        r = str.tostring(seconds, '00')
+        if minutes > 0 or hours > 0 or days > 0
+            r := str.tostring(minutes, '00') + ':' + r
+        if hours > 0 or days > 0
+            r := str.tostring(hours, '00') + ':' + r
+        if days > 0
+            r := str.tostring(days) + 'D ' + r
+        r
+    else
+        'n/a'
+ 
+HTFName(string HTF) =>
+    seconds = timeframe.in_seconds(HTF)
+    seconds < 60 ? str.tostring(seconds) + 's' : seconds / 60 < 60 ? str.tostring(seconds / 60) + 'm' : seconds / 60 / 60 < 24 ? str.tostring(seconds / 60 / 60) + 'H' : HTF
+ 
+method CandleSetHigh(array<Candle> candles, float h) =>
+    _h = h
+    if array.size(candles) > 0
+        for i = 0 to array.size(candles) - 1
+            Candle c = array.get(candles, i)
+            if c.h > _h
+                _h := c.h
+    _h
+ 
+method CandleSetLow(array<Candle> candles, float l) =>
+    _l = l
+    if array.size(candles) > 0
+        for i = 0 to array.size(candles) - 1
+            Candle c = array.get(candles, i)
+            if c.l < _l
+                _l := c.l
+    _l
+ 
+f_allHigh(array<Candle> candles) =>
+    float h = 0.0
+    for s in allSets
+        if s.settings.show and ValidTimeframe(s.settings.htf)
+            h := s.candles.CandleSetHigh(h)
+    if array.size(candles) > 0
+        for i = 0 to array.size(candles) - 1
+            Candle c = array.get(candles, i)
+            if c.h > h
+                h := c.h
+    h
+ 
+f_allLow(array<Candle> candles, float startVal) =>
+    float l = startVal
+    for s in allSets
+        if s.settings.show and ValidTimeframe(s.settings.htf)
+            l := s.candles.CandleSetLow(l)
+    if array.size(candles) > 0
+        for i = 0 to array.size(candles) - 1
+            Candle c = array.get(candles, i)
+            if c.l < l
+                l := c.l
+    l
+ 
+f_sweepStyle(string style) =>
+    switch style
+        '----' => line.style_dashed
+        '····' => line.style_dotted
+        => line.style_solid
+ 
+// ═════════════ PSP (chart vs Assets 1-4) ═════════════
+// Fetches the HTF candle of every enabled asset.
+method FetchAssets(CandleSet this, string htf) =>
+    for k = 0 to 3
+        bool has = false
+        if array.get(useCmp, k)
+            [ao, ah, al, ac] = request.security(array.get(cmpTickers, k), htf, [open, high, low, close], lookahead = barmerge.lookahead_on, ignore_invalid_symbol = true)
+            array.set(this.aO, k, ao)
+            array.set(this.aH, k, ah)
+            array.set(this.aL, k, al)
+            array.set(this.aC, k, ac)
+            has := not na(ao) and not na(ah) and not na(al) and not na(ac)
+        array.set(this.aHas, k, has)
+    this
+ 
+// Chart candle vs each enabled asset: opposite close direction = divergence
+method DetectHTFDivergence(Candle candle, CandleSet this) =>
+    bool chartBull = candle.c > candle.o
+    bool chartBear = candle.c < candle.o
+    int valid = 0
+    int divs = 0
+    for k = 0 to 3
+        if array.get(this.aHas, k)
+            valid += 1
+            float ao = array.get(this.aO, k)
+            float ac = array.get(this.aC, k)
+            bool aBull = ac > ao
+            bool aBear = ac < ao
+            if (chartBull and aBear) or (chartBear and aBull)
+                divs += 1
+    bool anyDiv = valid > 0 and divs > 0
+    bool allDiv = valid > 0 and divs == valid
+    candle.has_divergence := comparisonTriggerMode == "All enabled comparisons" ? allDiv : anyDiv
+    candle.is_bullish_div := chartBull
+    candle
+ 
+method DetectHTFPivots(Candle candle, CandleSet this, string htf) =>
+    candle.is_psp := false
+    if psp_mode == 'PSP'
+        bool has_pivot_1 = false
+        bool has_pivot_assets = false
+        if this.candles.size() >= 3
+            Candle prev1 = this.candles.get(1)
+            Candle prev2 = this.candles.get(2)
+            is_pivot_high = prev1.h > prev2.h and prev1.h > candle.h
+            is_pivot_low = prev1.l < prev2.l and prev1.l < candle.l
+            has_pivot_1 := is_pivot_high or is_pivot_low
+        if not psp_precise_mode
+            for k = 0 to 3
+                if array.get(this.aHas, k)
+                    [ph, pl] = request.security(array.get(cmpTickers, k), htf, [ta.pivothigh(high, 1, 1), ta.pivotlow(low, 1, 1)], lookahead = barmerge.lookahead_on, ignore_invalid_symbol = true)
+                    if not na(ph) or not na(pl)
+                        has_pivot_assets := true
+        bool is_pivot = psp_precise_mode ? has_pivot_1 : (has_pivot_1 or has_pivot_assets)
+        candle.is_psp := is_pivot and candle.has_divergence
+    candle
+ 
+// Re-fetches asset data, stores it on the candle (for panel SMT) and re-evaluates PSP
+method PSPRefresh(CandleSet this, Candle candle) =>
+    if needAssets
+        this.FetchAssets(this.settings.htf)
+        for k = 0 to 3
+            bool has = array.get(this.aHas, k)
+            array.set(candle.aH, k, has ? array.get(this.aH, k) : na)
+            array.set(candle.aL, k, has ? array.get(this.aL, k) : na)
+        if psp_on
+            candle.DetectHTFDivergence(this).DetectHTFPivots(this, this.settings.htf)
+    this
+ 
+f_pspActive(Candle candle) =>
+    psp_on and (psp_mode == 'PSP' ? candle.is_psp : candle.has_divergence)
+ 
+// ═════════════ PANEL SMT ═════════════
+clearCandlePanelSmt(Candle candle) =>
+    if not na(candle.smt_bear_line)
+        line.delete(candle.smt_bear_line)
+        candle.smt_bear_line := na
+    if not na(candle.smt_bear_lbl)
+        label.delete(candle.smt_bear_lbl)
+        candle.smt_bear_lbl := na
+    if not na(candle.smt_bull_line)
+        line.delete(candle.smt_bull_line)
+        candle.smt_bull_line := na
+    if not na(candle.smt_bull_lbl)
+        label.delete(candle.smt_bull_lbl)
+        candle.smt_bull_lbl := na
+    true
+ 
+// SMT between the newest panel candle (C2) and the previous one (C1):
+// the chart and an asset disagree on whether C2 took C1's high (bearish) / low (bullish).
+// The SMT line runs from C1's wick to C2's wick and stays after the candle closes.
+method DetectPanelSmt(CandleSet cs) =>
+    if showPanelSmt and cs.candles.size() >= 2
+        Candle c2 = cs.candles.get(0)
+        Candle c1 = cs.candles.get(1)
+        if not na(c2.body) and not na(c1.body)
+            bool chartTookHigh = c2.h > c1.h
+            bool chartTookLow = c2.l < c1.l
+            int validH = 0
+            int divH = 0
+            int validL = 0
+            int divL = 0
+            bool[] flagsH = array.new_bool(4, false)
+            bool[] flagsL = array.new_bool(4, false)
+            for k = 0 to 3
+                float c2h = array.get(c2.aH, k)
+                float c1h = array.get(c1.aH, k)
+                if not na(c2h) and not na(c1h)
+                    validH += 1
+                    if chartTookHigh != (c2h > c1h)
+                        divH += 1
+                        array.set(flagsH, k, true)
+                float c2l = array.get(c2.aL, k)
+                float c1l = array.get(c1.aL, k)
+                if not na(c2l) and not na(c1l)
+                    validL += 1
+                    if chartTookLow != (c2l < c1l)
+                        divL += 1
+                        array.set(flagsL, k, true)
+            bool allMode = comparisonTriggerMode == "All enabled comparisons"
+            bool bearSmt = showBearish and (allMode ? (validH > 0 and divH == validH) : divH > 0)
+            bool bullSmt = showBullish and (allMode ? (validL > 0 and divL == validL) : divL > 0)
+ 
+            if bearSmt
+                string txt = f_labelLogo(cs.settings.htf, f_compSuffix(flagsH))
+                c2.smt_bear_y1 := c1.h
+                c2.smt_bear_y2 := c2.h
+                if na(c2.smt_bear_line)
+                    c2.smt_bear_line := line.new(bar_index, c2.smt_bear_y1, bar_index, c2.smt_bear_y2, color = panelSmtColor, width = lineWidth, style = f_lineStyle(lineStyleInput))
+            else
+                if not na(c2.smt_bear_line)
+                    line.delete(c2.smt_bear_line)
+                    c2.smt_bear_line := na
+                if not na(c2.smt_bear_lbl)
+                    label.delete(c2.smt_bear_lbl)
+                    c2.smt_bear_lbl := na
+ 
+            if bullSmt
+                string txt = f_labelLogo(cs.settings.htf, f_compSuffix(flagsL))
+                c2.smt_bull_y1 := c1.l
+                c2.smt_bull_y2 := c2.l
+                if na(c2.smt_bull_line)
+                    c2.smt_bull_line := line.new(bar_index, c2.smt_bull_y1, bar_index, c2.smt_bull_y2, color = panelSmtColor, width = lineWidth, style = f_lineStyle(lineStyleInput))
+            else
+                if not na(c2.smt_bull_line)
+                    line.delete(c2.smt_bull_line)
+                    c2.smt_bull_line := na
+                if not na(c2.smt_bull_lbl)
+                    label.delete(c2.smt_bull_lbl)
+                    c2.smt_bull_lbl := na
+    cs
+ 
+// ═════════════ SWEEPS ═════════════
+clearAllHTFCandleSweeps(Candle candle) =>
+    if not na(candle.sweep_lines) and candle.sweep_lines.size() > 0
+        for i = candle.sweep_lines.size() - 1 to 0 by 1
+            line l = candle.sweep_lines.get(i)
+            if not na(l)
+                line.delete(l)
+        candle.sweep_lines.clear()
+        candle.sweep_c1_indices.clear()
+        candle.sweep_is_bullish.clear()
+        candle.sweep_c1_levels.clear()
+    true
+ 
+// C2 (newest candle, index 0) sweeps C1 (index 1): takes its low/high and closes back inside.
+method DetectCandleSetSweeps(CandleSet candleSet) =>
+    if candleSet.candles.size() >= 2 and settings.sweep_show
+        Candle c2 = candleSet.candles.get(0)
+        Candle c1 = candleSet.candles.get(1)
+        bool bullishSweep = c2.l < c1.l and c2.c > c1.l
+        bool bearishSweep = c2.h > c1.h and c2.c < c1.h
+        if bullishSweep and bearishSweep
+            if c2.high_bar_idx <= c2.low_bar_idx
+                bullishSweep := false
+            else
+                bearishSweep := false
+        if (bullishSweep or bearishSweep) and not na(c1.body) and not na(c2.body)
+            float yLevel = bullishSweep ? c1.l : c1.h
+            bool alreadyHasSweep = false
+            if not na(c2.sweep_lines) and c2.sweep_lines.size() > 0
+                for i = c2.sweep_lines.size() - 1 to 0 by 1
+                    if c2.sweep_c1_indices.get(i) == c1.bar_idx
+                        if c2.sweep_c1_levels.get(i) == yLevel
+                            alreadyHasSweep := true
+                        else
+                            line oldLine = c2.sweep_lines.get(i)
+                            if not na(oldLine)
+                                line.delete(oldLine)
+                            c2.sweep_lines.remove(i)
+                            c2.sweep_c1_indices.remove(i)
+                            c2.sweep_is_bullish.remove(i)
+                            c2.sweep_c1_levels.remove(i)
+            if not alreadyHasSweep
+                int x1 = box.get_left(c1.body) + 1
+                int x2 = box.get_right(c2.body)
+                line sweepLine = line.new(x1, yLevel, x2, yLevel, color = settings.sweep_color, style = f_sweepStyle(settings.sweep_style), width = settings.sweep_width)
+                c2.sweep_lines.push(sweepLine)
+                c2.sweep_c1_indices.push(c1.bar_idx)
+                c2.sweep_is_bullish.push(bullishSweep)
+                c2.sweep_c1_levels.push(yLevel)
+    candleSet
+ 
+// ═════════════ PANEL METHODS ═════════════
+method UpdateTime(CandleSet candleSet, int offset) =>
+    if settings.htf_timer_show and (barstate.isrealtime or barstate.islast)
+        string tmr = '(' + RemainingTime(candleSet.settings.htf) + ')'
+        if not na(candleSet.tfTimerTop)
+            candleSet.tfTimerTop.set_text(tmr)
+        if not na(candleSet.tfTimerBottom)
+            candleSet.tfTimerBottom.set_text(tmr)
+    candleSet
+ 
+// X position (bar index) of the wick of candle `idx` inside a panel
+f_candleWickX(int idx, int size, int offset) =>
+    int tb = offset + (settings.width + settings.buffer) * (size - idx - 1)
+    int(bar_index + settings.width / 2 + tb)
+ 
+f_pushC123(CandleSet cs, int idx, int size, int offset, string txt, bool bull) =>
+    Candle c = cs.candles.get(idx)
+    float pad = math.max((c.h - c.l) * 0.03, syminfo.mintick * 2)
+    float y = bull ? c.l - pad : c.h + pad
+    cs.c123.push(label.new(f_candleWickX(idx, size, offset), y, txt, color = color_transparent, textcolor = in_c123Color, style = bull ? label.style_label_up : label.style_label_down, size = in_c123Size, text_formatting = text.format_bold))
+    true
+ 
+// C1 = swept candle, C2 = sweeping candle (newest sweep in the panel), C3 = continuation candle
+method DrawC123(CandleSet cs, int offset) =>
+    if not na(cs.c123)
+        while cs.c123.size() > 0
+            label.delete(cs.c123.pop())
+    int size = cs.candles.size()
+    if in_c123On and size >= 2
+        int owner = -1
+        for i = 0 to size - 2
+            Candle cc = cs.candles.get(i)
+            if not na(cc.sweep_lines) and cc.sweep_lines.size() > 0
+                owner := i
+                break
+        if owner >= 0
+            Candle c2 = cs.candles.get(owner)
+            bool bull = c2.sweep_is_bullish.get(c2.sweep_lines.size() - 1)
+            bool c2Alive = true
+            if owner > 0
+                for k = 0 to owner - 1
+                    Candle newer = cs.candles.get(k)
+                    if bull ? newer.l < c2.l : newer.h > c2.h
+                        c2Alive := false
+                        break
+            if c2Alive
+                f_pushC123(cs, owner + 1, size, offset, "C1", bull)
+                f_pushC123(cs, owner, size, offset, "C2", bull)
+                if owner >= 1
+                    Candle c3 = cs.candles.get(owner - 1)
+                    bool c3Valid = bull ? c3.h > c2.h : c3.l < c2.l
+                    bool c3Alive = true
+                    if owner >= 2
+                        for k = 0 to owner - 2
+                            Candle newer = cs.candles.get(k)
+                            if bull ? newer.l < c3.l : newer.h > c3.h
+                                c3Alive := false
+                                break
+                    if c3Valid and c3Alive
+                        f_pushC123(cs, owner - 1, size, offset, "C3", bull)
+    cs
+ 
+method Reorder(CandleSet candleSet, int offset) =>
+    size = candleSet.candles.size()
+    if size > 0
+        for i = size - 1 to 0 by 1
+            Candle candle = candleSet.candles.get(i)
+            t_buffer = offset + (settings.width + settings.buffer) * (size - i - 1)
+            box.set_left(candle.body, bar_index + t_buffer)
+            box.set_right(candle.body, bar_index + settings.width + t_buffer)
+            line.set_x1(candle.wick_up, bar_index + settings.width / 2 + t_buffer)
+            line.set_x2(candle.wick_up, bar_index + settings.width / 2 + t_buffer)
+            line.set_x1(candle.wick_down, bar_index + settings.width / 2 + t_buffer)
+            line.set_x2(candle.wick_down, bar_index + settings.width / 2 + t_buffer)
+ 
+            // HTF sweep lines: from C1's wick to C3's wick (or C2's right edge when there is no C3)
+            if settings.sweep_show and not na(candle.sweep_lines) and candle.sweep_lines.size() > 0
+                int c3WickX = int(bar_index + settings.width + t_buffer)
+                if i > 0
+                    int c3_t_buffer = offset + (settings.width + settings.buffer) * (size - (i - 1) - 1)
+                    c3WickX := int(bar_index + settings.width / 2 + c3_t_buffer)
+                if i + 1 < size
+                    Candle c1Candle = candleSet.candles.get(i + 1)
+                    int c1_t_buffer = offset + (settings.width + settings.buffer) * (size - (i + 1) - 1)
+                    int c1WickX = int(bar_index + settings.width / 2 + c1_t_buffer)
+                    for sweepIdx = candle.sweep_lines.size() - 1 to 0 by 1
+                        line sweepLine = candle.sweep_lines.get(sweepIdx)
+                        float c1Level = candle.sweep_c1_levels.get(sweepIdx)
+                        if not na(sweepLine) and not na(c1Candle.body)
+                            line.set_x1(sweepLine, c1WickX)
+                            line.set_x2(sweepLine, c3WickX)
+                            line.set_y1(sweepLine, c1Level)
+                            line.set_y2(sweepLine, c1Level)
+                else
+                    clearAllHTFCandleSweeps(candle)
+ 
+            // Panel SMT lines: from C1's wick to C2's wick (the candle that owns the SMT)
+            if showPanelSmt and (not na(candle.smt_bear_line) or not na(candle.smt_bull_line))
+                if i + 1 < size
+                    int c2X = int(bar_index + settings.width / 2 + t_buffer)
+                    int c1_tb = offset + (settings.width + settings.buffer) * (size - (i + 1) - 1)
+                    int c1X = int(bar_index + settings.width / 2 + c1_tb)
+                    int midX = int(math.round((c1X + c2X) / 2.0))
+                    if not na(candle.smt_bear_line)
+                        line.set_xy1(candle.smt_bear_line, c1X, candle.smt_bear_y1)
+                        line.set_xy2(candle.smt_bear_line, c2X, candle.smt_bear_y2)
+                        if not na(candle.smt_bear_lbl)
+                            label.set_xy(candle.smt_bear_lbl, midX, (candle.smt_bear_y1 + candle.smt_bear_y2) / 2.0)
+                    if not na(candle.smt_bull_line)
+                        line.set_xy1(candle.smt_bull_line, c1X, candle.smt_bull_y1)
+                        line.set_xy2(candle.smt_bull_line, c2X, candle.smt_bull_y2)
+                        if not na(candle.smt_bull_lbl)
+                            label.set_xy(candle.smt_bull_lbl, midX, (candle.smt_bull_y1 + candle.smt_bull_y2) / 2.0)
+                else
+                    clearCandlePanelSmt(candle)
+    candleSet.DrawC123(offset)
+    top = 0.0
+    bottom = 0.0
+    if settings.label_alignment == 'Align'
+        top := f_allHigh(candleSet.candles)
+        bottom := f_allLow(candleSet.candles, top)
+    if settings.label_alignment == 'Follow Candles'
+        top := candleSet.candles.CandleSetHigh(0)
+        bottom := candleSet.candles.CandleSetLow(top)
+    float lblPad = math.max(math.abs(top - bottom) * 0.06, syminfo.mintick * 12.0)
+    top += lblPad
+    bottom -= lblPad
+    left = bar_index + offset + (settings.width + settings.buffer) * (size - 1) / 2
+    if settings.htf_label_show
+        string lblt = HTFName(candleSet.settings.htf)
+        string lbll = lblt
+        if settings.htf_timer_show
+            lblt := lblt + '\n'
+            lbll := '\n' + lbll
+        string tmr = '(' + RemainingTime(candleSet.settings.htf) + ')'
+        if settings.label_position == 'Both' or settings.label_position == 'Top'
+            if not na(candleSet.tfNameTop)
+                candleSet.tfNameTop.set_xy(left, top)
+            else
+                candleSet.tfNameTop := label.new(left, top, lblt, color = color_transparent, textcolor = settings.htf_label_color, style = label.style_label_down, size = settings.htf_label_size, text_formatting = text.format_bold)
+            if settings.htf_timer_show
+                if not na(candleSet.tfTimerTop)
+                    candleSet.tfTimerTop.set_xy(left, top)
+                else
+                    candleSet.tfTimerTop := label.new(left, top, tmr, color = color_transparent, textcolor = settings.htf_timer_color, style = label.style_label_down, size = settings.htf_timer_size, text_formatting = text.format_bold)
+        if settings.label_position == 'Both' or settings.label_position == 'Bottom'
+            if not na(candleSet.tfNameBottom)
+                candleSet.tfNameBottom.set_xy(left, bottom)
+            else
+                candleSet.tfNameBottom := label.new(left, bottom, lbll, color = color_transparent, textcolor = settings.htf_label_color, style = label.style_label_up, size = settings.htf_label_size, text_formatting = text.format_bold)
+            if settings.htf_timer_show
+                if not na(candleSet.tfTimerBottom)
+                    candleSet.tfTimerBottom.set_xy(left, bottom)
+                else
+                    candleSet.tfTimerBottom := label.new(left, bottom, tmr, color = color_transparent, textcolor = settings.htf_timer_color, style = label.style_label_up, size = settings.htf_timer_size, text_formatting = text.format_bold)
+    candleSet
+ 
+method Monitor(CandleSet candleSet) =>
+    int HTFBarTime = time(candleSet.settings.htf)
+    isNewHTFCandle = ta.change(HTFBarTime) > 0
+    if isNewHTFCandle
+        Candle candle = Candle.new()
+        candle.aH := array.new_float(4, na)
+        candle.aL := array.new_float(4, na)
+        candle.o := nz(candleSet.settings.own_o, open)
+        candle.c := nz(candleSet.settings.own_c, close)
+        candle.h := nz(candleSet.settings.own_h, high)
+        candle.l := nz(candleSet.settings.own_l, low)
+        candle.o_time := HTFBarTime
+        candle.bar_idx := bar_index
+        candle.high_bar_idx := bar_index
+        candle.low_bar_idx := bar_index
+        bull = candle.c > candle.o
+        bool pspOn = false
+        color bodyColor = f_opaque(pspOn and psp_style == 'Body' ? (candle.is_bullish_div ? psp_bull_div_body : psp_bear_div_body) : (bull ? settings.bull_body : settings.bear_body))
+        color borderColor = pspOn and psp_style == 'Border' ? (candle.is_bullish_div ? psp_bull_div_body : psp_bear_div_body) : (bull ? settings.bull_border : settings.bear_border)
+        color wickColor = bull ? settings.bull_wick : settings.bear_wick
+        candle.body := box.new(bar_index, math.max(candle.o, candle.c), bar_index + 2, math.min(candle.o, candle.c), borderColor, 1, bgcolor = bodyColor)
+        candle.wick_up := line.new(bar_index + 1, candle.h, bar_index, math.max(candle.o, candle.c), color = wickColor)
+        candle.wick_down := line.new(bar_index + 1, math.min(candle.o, candle.c), bar_index, candle.l, color = wickColor)
+        candle.sweep_lines := array.new<line>()
+        candle.sweep_c1_indices := array.new<int>()
+        candle.sweep_is_bullish := array.new<bool>()
+        candle.sweep_c1_levels := array.new<float>()
+        candleSet.candles.unshift(candle)
+        candleSet.DetectCandleSetSweeps()
+        candleSet.DetectPanelSmt()
+        if candleSet.candles.size() > candleSet.settings.max_display
+            Candle delCandle = array.pop(candleSet.candles)
+            clearAllHTFCandleSweeps(delCandle)
+            clearCandlePanelSmt(delCandle)
+            box.delete(delCandle.body)
+            line.delete(delCandle.wick_up)
+            line.delete(delCandle.wick_down)
+    candleSet
+ 
+method Update(CandleSet candleSet, int offset) =>
+    if candleSet.candles.size() > 0
+        Candle candle = candleSet.candles.first()
+        bool isLiveCandle = candle.o_time == time(candleSet.settings.htf)
+        if isLiveCandle
+            candle.h := nz(candleSet.settings.own_h, math.max(candle.h, high))
+            candle.l := nz(candleSet.settings.own_l, math.min(candle.l, low))
+            candle.c := nz(candleSet.settings.own_c, close)
+            if high >= candle.h - syminfo.mintick / 2
+                candle.high_bar_idx := bar_index
+            if low <= candle.l + syminfo.mintick / 2
+                candle.low_bar_idx := bar_index
+            bull = candle.c > candle.o
+            candleSet.PSPRefresh(candle)
+            bool pspOn = f_pspActive(candle)
+            color bodyColor = f_opaque(pspOn and psp_style == 'Body' ? (candle.is_bullish_div ? psp_bull_div_body : psp_bear_div_body) : (bull ? settings.bull_body : settings.bear_body))
+            color borderColor = pspOn and psp_style == 'Border' ? (candle.is_bullish_div ? psp_bull_div_body : psp_bear_div_body) : (bull ? settings.bull_border : settings.bear_border)
+            color wickColor = bull ? settings.bull_wick : settings.bear_wick
+            box.set_bgcolor(candle.body, bodyColor)
+            box.set_border_color(candle.body, borderColor)
+            line.set_color(candle.wick_up, wickColor)
+            line.set_color(candle.wick_down, wickColor)
+            box.set_top(candle.body, candle.o)
+            box.set_bottom(candle.body, candle.c)
+            line.set_y1(candle.wick_up, candle.h)
+            line.set_y2(candle.wick_up, math.max(candle.o, candle.c))
+            line.set_y1(candle.wick_down, candle.l)
+            line.set_y2(candle.wick_down, math.min(candle.o, candle.c))
+ 
+        // HTF sweeps + panel SMT: detect as the live candle develops
+        candleSet.DetectCandleSetSweeps()
+        candleSet.DetectPanelSmt()
+        if settings.sweep_show and settings.sweep_invalidate
+            for candleIdx = 0 to candleSet.candles.size() - 1 by 1
+                Candle sweepCandle = candleSet.candles.get(candleIdx)
+                if not na(sweepCandle.sweep_lines) and sweepCandle.sweep_lines.size() > 0
+                    for sweepIdx = sweepCandle.sweep_lines.size() - 1 to 0 by 1
+                        bool isBullish = sweepCandle.sweep_is_bullish.get(sweepIdx)
+                        float sweepLevel = sweepCandle.sweep_c1_levels.get(sweepIdx)
+                        bool invalidated = isBullish ? (close < sweepLevel) : (close > sweepLevel)
+                        if invalidated
+                            line sweepLine = sweepCandle.sweep_lines.get(sweepIdx)
+                            if not na(sweepLine)
+                                line.delete(sweepLine)
+                            sweepCandle.sweep_lines.remove(sweepIdx)
+                            sweepCandle.sweep_c1_indices.remove(sweepIdx)
+                            sweepCandle.sweep_is_bullish.remove(sweepIdx)
+                            sweepCandle.sweep_c1_levels.remove(sweepIdx)
+    candleSet
+ 
+// Phase 1: update data only
+f_panelRun(CandleSet s, int offset) =>
+    s.UpdateTime(offset)
+    s.Monitor().Update(offset)
+    true
+ 
+// Phase 2: position the panel
+f_panelPlace(CandleSet s, int offset) =>
+    if barstate.isrealtime or barstate.islast
+        if s.candles.size() > 0
+            s.Reorder(offset)
+    true
+ 
+// Sort key = timeframe length in seconds (slot index only breaks ties); na = panel not shown
+f_panelKey(CandleSet s, int slot) =>
+    s.settings.show and ValidTimeframe(s.settings.htf) ? timeframe.in_seconds(s.settings.htf) + slot * 0.001 : na
+ 
+f_panelWidth(CandleSet s) =>
+    int n = s.candles.size()
+    n > 0 ? n * settings.width + (n - 1) * settings.buffer : 0
+ 
+// Offset of panel `i` = padding + width of every shown panel with a shorter timeframe
+f_panelOffset(int i, array<float> keys, array<int> ws) =>
+    int off = settings.offset
+    float mk = keys.get(i)
+    for j = 0 to 5
+        float kj = keys.get(j)
+        if not na(kj) and kj < mk
+            off += ws.get(j) + settings.htf_buffer
+    off
+ 
+// ═════════════ HTF DATA ═════════════
+f_htfOHLC(string tf, float o_, float c_, float h_, float l_) =>
+    var float ro = na
+    var float rc = na
+    var float rh = na
+    var float rl = na
+    var int   rt = na
+    int t = time(tf)
+    if not na(t)
+        if na(rt) or t != rt
+            ro := o_
+            rh := h_
+            rl := l_
+            rt := t
+        else
+            if na(ro)
+                ro := o_
+            if not na(h_)
+                rh := na(rh) ? h_ : math.max(rh, h_)
+            if not na(l_)
+                rl := na(rl) ? l_ : math.min(rl, l_)
+        if not na(c_)
+            rc := c_
+    [ro, rc, rh, rl, na(ro) ? int(na) : rt]
+ 
+f_loadHtfData(CandleSet s, string tf) =>
+    [oO, oC, oH, oL, oT] = f_htfOHLC(tf, open, close, high, low)
+    s.settings.own_o := oO
+    s.settings.own_c := oC
+    s.settings.own_h := oH
+    s.settings.own_l := oL
+    true
+ 
+htf1.settings.htf := f_tfMap(htfTf1)
+htf2.settings.htf := f_tfMap(htfTf2)
+htf3.settings.htf := f_tfMap(htfTf3)
+htf4.settings.htf := f_tfMap(htfTf4)
+htf5.settings.htf := f_tfMap(htfTf5)
+htf6.settings.htf := f_tfMap(htfTf6)
+htf1.settings.max_display := cnt1
+htf2.settings.max_display := cnt2
+htf3.settings.max_display := cnt3
+htf4.settings.max_display := cnt4
+htf5.settings.max_display := cnt5
+htf6.settings.max_display := cnt6
+ 
+// HTF4-6 data (built from chart bars)
+f_loadHtfData(htf4, htf4.settings.htf)
+f_loadHtfData(htf5, htf5.settings.htf)
+f_loadHtfData(htf6, htf6.settings.htf)
+ 
+// HTF1-3 data (request.security)
+string effectiveHtf1 = timeframe.in_seconds(htf1.settings.htf) > timeframe.in_seconds() ? htf1.settings.htf : timeframe.period
+[own_o_1, own_h_1, own_l_1, own_c_1] = request.security(syminfo.tickerid, effectiveHtf1, [open, high, low, close], lookahead = barmerge.lookahead_on)
+htf1.settings.own_o := own_o_1
+htf1.settings.own_h := own_h_1
+htf1.settings.own_l := own_l_1
+htf1.settings.own_c := own_c_1
+ 
+string effectiveHtf2 = timeframe.in_seconds(htf2.settings.htf) > timeframe.in_seconds() ? htf2.settings.htf : timeframe.period
+[own_o_2, own_h_2, own_l_2, own_c_2] = request.security(syminfo.tickerid, effectiveHtf2, [open, high, low, close], lookahead = barmerge.lookahead_on)
+htf2.settings.own_o := own_o_2
+htf2.settings.own_h := own_h_2
+htf2.settings.own_l := own_l_2
+htf2.settings.own_c := own_c_2
+ 
+string effectiveHtf3 = timeframe.in_seconds(htf3.settings.htf) > timeframe.in_seconds() ? htf3.settings.htf : timeframe.period
+[own_o_3, own_h_3, own_l_3, own_c_3] = request.security(syminfo.tickerid, effectiveHtf3, [open, high, low, close], lookahead = barmerge.lookahead_on)
+htf3.settings.own_o := own_o_3
+htf3.settings.own_h := own_h_3
+htf3.settings.own_l := own_l_3
+htf3.settings.own_c := own_c_3
+ 
+// ═════════════ ASSET ARRAY SETUP (first bar only) ═════════════
+if barstate.isfirst
+    for s in allSets
+        s.aO := array.new_float(4, na)
+        s.aC := array.new_float(4, na)
+        s.aH := array.new_float(4, na)
+        s.aL := array.new_float(4, na)
+        s.aHas := array.new_bool(4, false)
+        s.c123 := array.new<label>()
+ 
+// ═════════════ PANEL LAYOUT (sorted by timeframe, shortest on the left) ═════════════
+float pk1 = f_panelKey(htf1, 0)
+float pk2 = f_panelKey(htf2, 1)
+float pk3 = f_panelKey(htf3, 2)
+float pk4 = f_panelKey(htf4, 3)
+float pk5 = f_panelKey(htf5, 4)
+float pk6 = f_panelKey(htf6, 5)
+ 
+if not na(pk1)
+    f_panelRun(htf1, 0)
+if not na(pk2)
+    f_panelRun(htf2, 0)
+if not na(pk3)
+    f_panelRun(htf3, 0)
+if not na(pk4)
+    f_panelRun(htf4, 0)
+if not na(pk5)
+    f_panelRun(htf5, 0)
+if not na(pk6)
+    f_panelRun(htf6, 0)
+ 
+array<float> pKeys = array.from(pk1, pk2, pk3, pk4, pk5, pk6)
+array<int>   pWid  = array.from(f_panelWidth(htf1), f_panelWidth(htf2), f_panelWidth(htf3), f_panelWidth(htf4), f_panelWidth(htf5), f_panelWidth(htf6))
+ 
+if not na(pk1)
+    f_panelPlace(htf1, f_panelOffset(0, pKeys, pWid))
+if not na(pk2)
+    f_panelPlace(htf2, f_panelOffset(1, pKeys, pWid))
+if not na(pk3)
+    f_panelPlace(htf3, f_panelOffset(2, pKeys, pWid))
+if not na(pk4)
+    f_panelPlace(htf4, f_panelOffset(3, pKeys, pWid))
+if not na(pk5)
+    f_panelPlace(htf5, f_panelOffset(4, pKeys, pWid))
+if not na(pk6)
+    f_panelPlace(htf6, f_panelOffset(5, pKeys, pWid))
+ 
+// Invisible plots keep the HTF candles inside the price-scale auto-fit
+var float allHigh = na
+var float allLow = na
+allHigh := na
+allLow := na
+for s in allSets
+    if s.candles.size() > 0
+        for i = 0 to s.candles.size() - 1
+            Candle cx = s.candles.get(i)
+            allHigh := na(allHigh) ? cx.h : math.max(allHigh, cx.h)
+            allLow := na(allLow) ? cx.l : math.min(allLow, cx.l)
+ 
+plot(allHigh, title = '(internal) HTF scale anchor high', color = color.new(color.white, 100), display = display.pane)
+plot(allLow, title = '(internal) HTF scale anchor low', color = color.new(color.white, 100), display = display.pane)
+ 
