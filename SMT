@@ -1,14 +1,21 @@
 //@version=6
-indicator("GxT SMT + Multi-TF SSMT (4 Assets)", shorttitle="GxT SMT", overlay=true, max_lines_count=500, max_labels_count=500)
+indicator("Clean SMT (Swing + Multi-TF)", shorttitle="Clean SMT", overlay=true, max_lines_count=500, max_labels_count=500)
 
 // ═══════════════════════════════════════════════════════════════
-// 0. INPUTS
+// CLEAN SMT MARKING
+//  • Thin line between the two swing points that diverged
+//  • Text at the CENTER of the line:  TF on row 1, ASSET(S) on row 2
+//  • Bearish text sits above the line, bullish text below it
+//  • Several timeframes / assets on the same line share ONE text block
 // ═══════════════════════════════════════════════════════════════
+
 const string G_A = "Correlated Assets"
 const string G_S = "Swing SMT (chart timeframe)"
 const string G_Q = "SSMT Timeframes"
 const string G_V = "Visuals"
+const string G_N = "Display Names (optional short names)"
 
+// ─────────────── Assets ───────────────
 use1 = input.bool(true,  "Asset 1", group=G_A, inline="a1")
 sym1 = input.symbol("CME_MINI:ES1!", "", group=G_A, inline="a1")
 inv1 = input.bool(false, "↕ Inverse", group=G_A, inline="a1", tooltip="ON: asset is inversely correlated — SMT fires when it moves in the SAME direction as the main chart.")
@@ -22,13 +29,15 @@ use4 = input.bool(true,  "Asset 4", group=G_A, inline="a4")
 sym4 = input.symbol("TVC:DXY", "", group=G_A, inline="a4")
 inv4 = input.bool(true,  "↕ Inverse", group=G_A, inline="a4")
 
-showSwing  = input.bool(true, "Show Swing SMT", group=G_S)
-swingLeft  = input.int(2, "Left bars (C1 side)", minval=1, group=G_S)
-swingRight = input.int(1, "Right bars (C3 side)", minval=1, group=G_S)
-tolTicks   = input.int(2, "Equal H/L tolerance (ticks)", minval=0, group=G_S, tooltip="Highs/lows within this tolerance count as EQUAL → no SMT.")
-allowFlip  = input.bool(true, "Also flag LH-vs-HH flavor", group=G_S)
-swingOnlyTf = input.bool(true, "Only when chart TF is an enabled TF below", group=G_S, tooltip="ON: swing SMT is drawn only if the chart timeframe is ticked in SSMT Timeframes. Untick e.g. 15m there and no 15m SMT is drawn.")
+// ─────────────── Swing SMT ───────────────
+showSwing   = input.bool(true, "Show Swing SMT", group=G_S)
+swingLeft   = input.int(2, "Left bars (C1 side)", minval=1, group=G_S)
+swingRight  = input.int(1, "Right bars (C3 side)", minval=1, group=G_S)
+tolTicks    = input.int(2, "Equal H/L tolerance (ticks)", minval=0, group=G_S, tooltip="Highs/lows within this tolerance count as EQUAL → no SMT.")
+allowFlip   = input.bool(true, "Also flag LH-vs-HH flavor", group=G_S)
+swingOnlyTf = input.bool(true, "Only when chart TF is an enabled TF below", group=G_S, tooltip="ON: swing SMT is drawn only if the chart timeframe is ticked in SSMT Timeframes.")
 
+// ─────────────── SSMT timeframes ───────────────
 showSSMT = input.bool(true, "Show SSMT", group=G_Q)
 en1  = input.bool(true,  "TF 1",  group=G_Q, inline="t1")
 rawTf1 = input.string("15m", "", options=["1m","3m","5m","15m","30m","45m","90m","1h","2h","3h","4h","6h","7h","8h","12h","1D","1W","1M"], group=G_Q, inline="t1")
@@ -51,22 +60,22 @@ rawTf9 = input.string("1W", "", options=["1m","3m","5m","15m","30m","45m","90m",
 en10 = input.bool(true,  "TF 10", group=G_Q, inline="t10")
 rawTf10 = input.string("1M", "", options=["1m","3m","5m","15m","30m","45m","90m","1h","2h","3h","4h","6h","7h","8h","12h","1D","1W","1M"], group=G_Q, inline="t10")
 
-colBear = input.color(color.red,  "Bearish", group=G_V, inline="c")
-colBull = input.color(color.lime, "Bullish", group=G_V, inline="c")
-maxDraw = input.int(200, "Max lines / labels kept", minval=10, maxval=250, group=G_V)
-showLbl = input.bool(true, "Show text", group=G_V)
-mergeBars = input.int(4, "Merge text within N bars", minval=0, maxval=30, group=G_V, tooltip="Texts of the same side that land within N bars of each other are combined into ONE stacked block. Higher = cleaner chart.")
-maxRows   = input.int(5, "Max rows per text block", minval=1, maxval=12, group=G_V)
-const string G_N = "Display Names (optional short names)"
+// ─────────────── Visuals ───────────────
+lineCol  = input.color(#dbdbdb, "Line", group=G_V, inline="v1")
+lineW    = input.int(1, "Width", minval=1, maxval=4, group=G_V, inline="v1")
+txtCol   = input.color(color.black, "Text", group=G_V, inline="v2")
+txtSize  = input.string(size.tiny, "", options=[size.tiny, size.small, size.normal], group=G_V, inline="v2")
+showLbl  = input.bool(true, "Show text", group=G_V)
+maxRows  = input.int(5, "Max timeframes per text block", minval=1, maxval=12, group=G_V)
+maxDraw  = input.int(100, "Max SMT marks kept", minval=10, maxval=120, group=G_V)
+
 nm1 = input.string("", "Asset 1 name", group=G_N)
 nm2 = input.string("", "Asset 2 name", group=G_N)
 nm3 = input.string("", "Asset 3 name", group=G_N)
 nm4 = input.string("", "Asset 4 name", group=G_N)
 
-float atrV = ta.atr(14)
-
 // ═══════════════════════════════════════════════════════════════
-// 1. TYPES
+// TYPES
 // ═══════════════════════════════════════════════════════════════
 type SwingState
     float mh  = na
@@ -91,14 +100,11 @@ type HtfAcc
     int   prevLT = na
 
 // ═══════════════════════════════════════════════════════════════
-// 2. HELPERS
+// HELPERS
 // ═══════════════════════════════════════════════════════════════
-var line[]   smtLines  = array.new<line>()
-var bool[]   labelDir = array.new<bool>()
-var string[] labelTf  = array.new<string>()   // timeframe each text block was created for
-var string[] lineTf   = array.new<string>()   // timeframe each line belongs to
-var string[] lineStyles = array.new<string>()   // parallel to smtLines: solid = SMT, dashed = SSMT
-var label[] smtLabels = array.new<label>()
+var line[]   smtLines = array.new<line>()
+var label[]  txtLbls  = array.new<label>()
+var bool[]   txtDir   = array.new<bool>()     // true = bearish (text above)
 
 f_short(string s) =>
     parts = str.split(s, ":")
@@ -142,59 +148,56 @@ f_div(int mMove, int cMove, bool inv, bool flip, int classic) =>
     int cm = inv ? -cMove : cMove
     mMove != 0 and cm != 0 and mMove * cm == -1 and (flip or mMove == classic)
 
-f_draw(int x1, float y1, int x2, float y2, color c, string st, string tfTxt, string pair, bool above) =>
-    // 1) line — skip if an identical one already exists (multiple assets, same anchors)
+// Draws one SMT mark: line + text centered on the line (above for bearish, below for bullish).
+f_draw(int x1, float y1, int x2, float y2, bool above, string tfTxt, string pair) =>
+    // 1) line (skipped if an identical line already exists)
     bool dupLine = false
     int nl = array.size(smtLines)
     if nl > 0
         for i = math.max(0, nl - 40) to nl - 1
             line l0 = array.get(smtLines, i)
-            if array.get(lineTf, i) == tfTxt and array.get(lineStyles, i) == st and line.get_x1(l0) == x1 and line.get_y1(l0) == y1 and line.get_x2(l0) == x2 and line.get_y2(l0) == y2
+            if line.get_x1(l0) == x1 and line.get_y1(l0) == y1 and line.get_x2(l0) == x2 and line.get_y2(l0) == y2
                 dupLine := true
     if not dupLine
-        ln = line.new(x1, y1, x2, y2, xloc=xloc.bar_time, color=c, style=st, width=1)
+        ln = line.new(x1, y1, x2, y2, xloc=xloc.bar_time, color=lineCol, style=line.style_solid, width=lineW)
         array.push(smtLines, ln)
-        array.push(lineStyles, st)
-        array.push(lineTf, tfTxt)
         while array.size(smtLines) > maxDraw
             line.delete(array.shift(smtLines))
-            array.shift(lineStyles)
-            array.shift(lineTf)
-    // 2) text — nearby same-side texts merge into ONE stacked block; same-TF pairs share a row
+
+    // 2) text block at the CENTER of the line
+    //    format:  TF
+    //             ASSET (several assets on the same TF share one row)
     if showLbl
-        int   mx = x1 + int((x2 - x1) / 2)   // text is centered along the line, then pushed OFF the line (bearish above, bullish below)
+        int   mx = x1 + int((x2 - x1) / 2)
         float my = (y1 + y2) / 2
         bool merged = false
-        int nb = array.size(smtLabels)
-        int radius = mergeBars * timeframe.in_seconds(timeframe.period) * 1000
+        int nb = array.size(txtLbls)
         if nb > 0
             for i = math.max(0, nb - 40) to nb - 1
-                label lb = array.get(smtLabels, i)
-                bool exact = label.get_x(lb) == mx and label.get_y(lb) == my
-                bool sameTfNear = array.get(labelTf, i) == tfTxt and math.abs(label.get_x(lb) - mx) <= radius and math.abs(label.get_y(lb) - my) <= atrV * 4
-                if not merged and array.get(labelDir, i) == above and (exact or sameTfNear)
+                label lb = array.get(txtLbls, i)
+                if not merged and array.get(txtDir, i) == above and label.get_x(lb) == mx and label.get_y(lb) == my
                     string[] rows = str.split(label.get_text(lb), "\n")
                     bool found = false
-                    for r = 0 to array.size(rows) - 1
-                        string row = array.get(rows, r)
-                        if not found and str.startswith(row, tfTxt + " ")
-                            if not str.contains(row + " ", " " + pair + " ")
-                                array.set(rows, r, row + " " + pair)
+                    for r = 0 to array.size(rows) - 1 by 2
+                        if not found and array.get(rows, r) == tfTxt
+                            string assets = array.get(rows, r + 1)
+                            if not str.contains(" " + assets + " ", " " + pair + " ")
+                                array.set(rows, r + 1, assets + " " + pair)
                             found := true
-                    if not found and array.size(rows) < maxRows
-                        array.push(rows, tfTxt + " " + pair)
+                    if not found and array.size(rows) < maxRows * 2
+                        array.push(rows, tfTxt)
+                        array.push(rows, pair)
                     label.set_text(lb, array.join(rows, "\n"))
                     merged := true
         if not merged
-            lb2 = label.new(mx, my, tfTxt + " " + pair, xloc=xloc.bar_time, style=above ? label.style_label_down : label.style_label_up,
-                 color=color.new(c, 100), textcolor=c, size=size.tiny)
-            array.push(smtLabels, lb2)
-            array.push(labelDir, above)
-            array.push(labelTf, tfTxt)
-            while array.size(smtLabels) > maxDraw
-                label.delete(array.shift(smtLabels))
-                array.shift(labelDir)
-                array.shift(labelTf)
+            lb2 = label.new(mx, my, tfTxt + "\n" + pair, xloc=xloc.bar_time,
+                 style=above ? label.style_label_down : label.style_label_up,
+                 color=color.new(color.white, 100), textcolor=txtCol, size=txtSize, textalign=text.align_center)
+            array.push(txtLbls, lb2)
+            array.push(txtDir, above)
+            while array.size(txtLbls) > maxDraw
+                label.delete(array.shift(txtLbls))
+                array.shift(txtDir)
 
 f_swing(SwingState s, bool use, bool inv, float mPH, float mPL, float cPH, float cPL, int pT, float cTick, string nm) =>
     bool bear = false
@@ -206,7 +209,7 @@ f_swing(SwingState s, bool use, bool inv, float mPH, float mPL, float cPH, float
             if not na(s.mh) and not na(s.ch)
                 if f_div(f_move(mPH, s.mh, tolM), f_move(cPH, s.ch, tolC), inv, allowFlip, 1)
                     bear := true
-                    f_draw(s.mhT, s.mh, pT, mPH, colBear, line.style_solid, f_tfName(timeframe.period), nm, true)
+                    f_draw(s.mhT, s.mh, pT, mPH, true, f_tfName(timeframe.period), nm)
             s.mh := mPH
             s.ch := cPH
             s.mhT := pT
@@ -214,7 +217,7 @@ f_swing(SwingState s, bool use, bool inv, float mPH, float mPL, float cPH, float
             if not na(s.ml) and not na(s.cl)
                 if f_div(f_move(mPL, s.ml, tolM), f_move(cPL, s.cl, tolC), inv, allowFlip, -1)
                     bull := true
-                    f_draw(s.mlT, s.ml, pT, mPL, colBull, line.style_solid, f_tfName(timeframe.period), nm, false)
+                    f_draw(s.mlT, s.ml, pT, mPL, false, f_tfName(timeframe.period), nm)
             s.ml := mPL
             s.cl := cPL
             s.mlT := pT
@@ -253,14 +256,14 @@ f_ssmt(HtfAcc m, HtfAcc c, bool use, bool inv, float cTick, string tfTxt, string
         bool bullDiv = f_div(f_move(m.curL, m.prevL, tolM), f_move(c.curL, c.prevL, tolC), inv, allowFlip, -1)
         if bearDiv
             bear := true
-            f_draw(m.prevHT, m.prevH, m.curHT, m.curH, colBear, line.style_solid, tfTxt, pair, true)
+            f_draw(m.prevHT, m.prevH, m.curHT, m.curH, true, tfTxt, pair)
         else if bullDiv
             bull := true
-            f_draw(m.prevLT, m.prevL, m.curLT, m.curL, colBull, line.style_solid, tfTxt, pair, false)
+            f_draw(m.prevLT, m.prevL, m.curLT, m.curL, false, tfTxt, pair)
     [bear, bull]
 
 // ═══════════════════════════════════════════════════════════════
-// 3. DATA (1 tuple security call per asset)
+// DATA (1 tuple security call per asset)
 // ═══════════════════════════════════════════════════════════════
 f_get(string sym) =>
     request.security(sym, timeframe.period, [high, low, syminfo.mintick], barmerge.gaps_off, barmerge.lookahead_off)
@@ -276,7 +279,7 @@ n3 = nm3 != "" ? nm3 : f_short(sym3)
 n4 = nm4 != "" ? nm4 : f_short(sym4)
 
 // ═══════════════════════════════════════════════════════════════
-// 4. SWING SMT
+// SWING SMT
 // ═══════════════════════════════════════════════════════════════
 int chartSec = timeframe.in_seconds(timeframe.period)
 bool swingTfOn = not swingOnlyTf or (en1 and timeframe.in_seconds(tf1) == chartSec) or (en2 and timeframe.in_seconds(tf2) == chartSec) or (en3 and timeframe.in_seconds(tf3) == chartSec) or (en4 and timeframe.in_seconds(tf4) == chartSec) or (en5 and timeframe.in_seconds(tf5) == chartSec) or (en6 and timeframe.in_seconds(tf6) == chartSec) or (en7 and timeframe.in_seconds(tf7) == chartSec) or (en8 and timeframe.in_seconds(tf8) == chartSec) or (en9 and timeframe.in_seconds(tf9) == chartSec) or (en10 and timeframe.in_seconds(tf10) == chartSec)
@@ -296,8 +299,8 @@ int   pT  = time[swingRight]
 [sb4, su4] = f_swing(sw4, showSwing and swingTfOn and use4, inv4, mPH, mPL, c4h[swingRight], c4l[swingRight], pT, c4t, n4)
 
 // ═══════════════════════════════════════════════════════════════
-// 5. MULTI-TIMEFRAME SSMT
-//    Index layout: accs[tfIdx * 5 + k], k = 0 main, 1..4 assets
+// MULTI-TIMEFRAME SSMT
+//   Index layout: accs[tfIdx * 5 + k], k = 0 main, 1..4 assets
 // ═══════════════════════════════════════════════════════════════
 var HtfAcc[] accs = array.new<HtfAcc>()
 var int[]    lastT = array.new<int>(10, na)
@@ -339,7 +342,7 @@ for i = 0 to 9
         array.set(lastT, i, tNow)
 
 // ═══════════════════════════════════════════════════════════════
-// 6. STATUS + ALERTS
+// STATUS + ALERTS
 // ═══════════════════════════════════════════════════════════════
 var table tbl = table.new(position.bottom_right, 1, 1)
 if barstate.islast
