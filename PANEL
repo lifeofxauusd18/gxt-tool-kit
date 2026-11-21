@@ -10,7 +10,7 @@ indicator("PO3",
 
 // ═══════════════════════════════════════════════════════════════════════════
 // HTF PANEL – standalone extract (no correlated assets)
-// Includes: HTF candles, sweeps, HTF FVG/VI, labels/timers and separators.
+// Includes: HTF candles, HTF FVG/VI, labels/timers and separators.
 // ═══════════════════════════════════════════════════════════════════════════
 
 string g03 = "1. HTF CANDLES ________________"
@@ -40,8 +40,6 @@ color  in_bullBorder = input.color(#000000, 'Border', inline = 'cs2', group = g0
 color  in_bearBorder = input.color(#000000, '', inline = 'cs2', group = g05)
 color  in_bullWick   = input.color(#000000, 'Wick', inline = 'cs3', group = g05)
 color  in_bearWick   = input.color(#000000, '', inline = 'cs3', group = g05)
-bool   in_sweepOn    = input.bool(true, 'Sweeps', inline = 'cs4', group = g05)
-color  in_sweepCol   = input.color(#9c9c9c, '', inline = 'cs4', group = g05)
 bool   in_htfLblOn   = input.bool(true, 'HTF Label', inline = 'cs5', group = g05)
 color  in_lblColor   = input.color(color.black, '', inline = 'cs5', group = g05)
 string in_lblSize    = input.string(size.small, '', [size.tiny, size.small, size.normal, size.large, size.huge], inline = 'cs5', group = g05)
@@ -74,8 +72,6 @@ type Candle
     box body
     line wick_up
     line wick_down
-    line sweep_high_line
-    line sweep_low_line
 
 type Imbalance
     box b
@@ -113,8 +109,6 @@ type Settings
     bool htf_timer_show
     color htf_timer_color
     string htf_timer_size
-    bool sweep_show
-    color sweep_color
     bool show_sep
     color sep_color
     string sep_style
@@ -192,13 +186,11 @@ settings.htf_timer_color := in_tmrColor
 settings.htf_timer_size  := in_tmrSize
 settings.fvg_color     := in_htfFvgCol
 settings.vi_color      := in_htfViCol
-settings.sweep_color   := in_sweepCol
 settings.sep_color     := in_htfSepCol
 settings.htf_label_show  := in_htfLblOn
 settings.htf_timer_show  := in_tmrOn
 settings.label_position  := in_lblPos
 settings.label_alignment := in_lblAlign
-settings.sweep_show      := in_sweepOn
 settings.fvg_show        := in_htfFvgOn
 settings.vi_show         := in_htfViOn
 settings.show_sep        := in_sepShow
@@ -398,37 +390,6 @@ method FindImbalance(CandleSet candleSet) =>
                     candleSet.imbalances.push(imb)
     candleSet
 
-// HTF-panel sweeps (candle B sweeping the high/low of the next-older candle A)
-method DrawSweeps(CandleSet candleSet) =>
-    if (barstate.isrealtime or barstate.islast) and candleSet.candles.size() >= 2
-        color sweepColor = settings.sweep_color
-        int sz = candleSet.candles.size()
-        for i = 0 to sz - 2
-            Candle B = candleSet.candles.get(i)
-            Candle A = candleSet.candles.get(i + 1)
-            int A_l = box.get_left(A.body)
-            int A_cx = A_l + settings.width / 2
-            int B_r = box.get_right(B.body)
-            if not na(B.sweep_high_line)
-                line.delete(B.sweep_high_line)
-                B.sweep_high_line := na
-            if not na(B.sweep_low_line)
-                line.delete(B.sweep_low_line)
-                B.sweep_low_line := na
-            if settings.sweep_show
-                if B.h > A.h
-                    B.sweep_high_line := line.new(A_cx, A.h, B_r, A.h, xloc = xloc.bar_index, color = sweepColor, width = 1, style = line.style_solid)
-                if B.l < A.l
-                    B.sweep_low_line := line.new(A_cx, A.l, B_r, A.l, xloc = xloc.bar_index, color = sweepColor, width = 1, style = line.style_solid)
-        Candle oldest = candleSet.candles.get(sz - 1)
-        if not na(oldest.sweep_high_line)
-            line.delete(oldest.sweep_high_line)
-            oldest.sweep_high_line := na
-        if not na(oldest.sweep_low_line)
-            line.delete(oldest.sweep_low_line)
-            oldest.sweep_low_line := na
-    candleSet
-
 method Monitor(CandleSet candleSet) =>
     int HTFBarTime = time(candleSet.settings.htf)
     isNewHTFCandle = ta.change(HTFBarTime) > 0
@@ -538,15 +499,6 @@ if htf2.settings.show and ValidTimeframe(htf2.settings.htf) and cnt < last
 if htf3.settings.show and ValidTimeframe(htf3.settings.htf) and cnt < last
     htf3.Monitor().Update(offset).FindImbalance()
     htf3_end := offset + htf3.candles.size() * settings.width + (htf3.candles.size() > 0 ? (htf3.candles.size() - 1) * settings.buffer : 0)
-
-if htf1.settings.show and ValidTimeframe(htf1.settings.htf)
-    htf1.DrawSweeps()
-
-if htf2.settings.show and ValidTimeframe(htf2.settings.htf)
-    htf2.DrawSweeps()
-
-if htf3.settings.show and ValidTimeframe(htf3.settings.htf)
-    htf3.DrawSweeps()
 
 if settings.show_sep
     while separators.size() > 0
